@@ -1,0 +1,12 @@
+{
+    "folders":
+    [
+        {
+            "path": "W:/gba",
+            "folder_exclude_patterns": [".vs", "Debug"],
+        },
+    ],
+    "settings":
+    {
+    },
+}

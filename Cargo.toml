@@ -1,0 +1,6 @@
+[package]
+name = "gba"
+version = "0.1.0"
+authors = ["Angus Holder <aholder97@gmail.com>"]
+
+[dependencies]
