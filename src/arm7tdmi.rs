@@ -440,11 +440,19 @@ impl Arm7TDMI {
     }
 
     pub fn branch_to(&mut self, addr: u32) {
-        let step: u32 = if self.cpsr.thumb_mode {2} else {4};
-        self.regs[REG_PC] = addr;
-        self.mem.prefetch[0] = self.mem.exec32(addr);
-        self.mem.prefetch[1] = self.mem.exec32(addr + step);
-        self.regs[REG_PC] += step;
+        if self.cpsr.thumb_mode {
+            assert!(addr & 1 == 0);
+            let step = 2;
+            self.mem.prefetch[0] = self.mem.exec16(addr) as u32;
+            self.mem.prefetch[1] = self.mem.exec16(addr + step) as u32;
+            self.regs[REG_PC] = addr + step;
+        } else {
+            assert!(addr & 3 == 0);
+            let step = 4;
+            self.mem.prefetch[0] = self.mem.exec32(addr);
+            self.mem.prefetch[1] = self.mem.exec32(addr + step);
+            self.regs[REG_PC] = addr + step;
+        }
     }
 
     pub fn fetch_next_opcode(&mut self) -> u32 {

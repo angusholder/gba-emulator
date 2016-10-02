@@ -83,3 +83,17 @@ enum BackgoundMode {
     Mode4, //     Yes      --2-   240x160            2     256/1        --MABP
     Mode5, //     Yes      --2-   160x128            2     32768        --MABP
 }
+
+pub struct IORegs {
+    pub post_boot_flag: bool,
+    pub master_interrupt_enable: bool,
+}
+
+impl Default for IORegs {
+    fn default() -> IORegs {
+        IORegs {
+            post_boot_flag: false,
+            master_interrupt_enable: true,
+        }
+    }
+}

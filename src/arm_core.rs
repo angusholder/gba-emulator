@@ -253,7 +253,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                         0b101111 => { // BX
                             let rn = arm.regs[(op & 0xF) as usize];
                             arm.cpsr.thumb_mode = (rn & 1) != 0;
-                            arm.branch_to(rn & !1);
+                            arm.branch_to(rn & !1u32);
                         }
 
                         _ => invalid!(op),

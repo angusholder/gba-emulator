@@ -13,8 +13,6 @@ mod disassemble;
 mod utils;
 mod io;
 
-use io::LCDControl;
-
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use arm_core::step_arm;
 use thumb_core::step_thumb;
