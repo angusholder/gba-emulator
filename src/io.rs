@@ -1,7 +1,6 @@
-use utils::MyInto;
-
-bitfield_struct! {
-    LCDControl: u16 {
+unpacked_bitfield_struct! {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct LCDControl: u16 {
         (0,3) bg_mode: u8,
         (3,1) cgb_mode: bool,
         (4,1) display_frame_select: u8,
@@ -10,15 +9,16 @@ bitfield_struct! {
         (7,1) forced_blank: bool,
         (8,1) display_bg0: bool,
         (9,1) display_bg1: bool,
-        (10,1)display_bg2: bool,
-        (11,1)display_bg3: bool,
-        (12,1)display_obj: bool,
-        (13,1)display_window_0: bool,
-        (14,1)display_window_1: bool,
-        (15,1)display_obj_window: bool,
+        (10,1) display_bg2: bool,
+        (11,1) display_bg3: bool,
+        (12,1) display_obj: bool,
+        (13,1) display_window_0: bool,
+        (14,1) display_window_1: bool,
+        (15,1) display_obj_window: bool,
     }
 
-    LCDStatus: u16 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct LCDStatus: u16 {
         (0,1) vblank: bool,
         (1,1) hblank: bool,
         (2,1) vcounter: bool,
@@ -27,11 +27,13 @@ bitfield_struct! {
         (5,1) vcounter_irq_enable: bool,
     }
 
-    VerticalCounter: u16 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct VerticalCounter: u16 {
         (0,8) current_scanline: u8,
     }
 
-    BackgroundControl: u16 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct BackgroundControl: u16 {
         (0,2) bg_priority: u8,
         (2,2) character_base_block: u8,
         (6,1) mosaic: bool,
@@ -41,17 +43,20 @@ bitfield_struct! {
         (14,2)screen_size: u8,
     }
 
-    BackgroundScroll: u16 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct BackgroundScroll: u16 {
         (0,9) offset: u16,
     }
 
-    FixedPoint: u32 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct FixedPoint: u32 {
         (0,8) fraction: u8,
         (8,19)integer: u32,
         (27,1)sign: bool,
     }
 
-    IrqFlags: u16 {
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct IrqFlags: u16 {
         (0, 1) lcd_vblank: bool,
         (1, 1) lcd_hblank: bool,
         (2, 1) lcd_vcounter_match: bool,
