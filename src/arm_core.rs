@@ -117,7 +117,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
 
     let pc = arm.regs[REG_PC];
 
-    let cond = ConditionCode::from(op);
+    let cond = ConditionCode::from(op >> 28);
     if !arm.eval_condition_code(cond) {
         return;
     }

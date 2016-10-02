@@ -2,11 +2,18 @@
     "folders":
     [
         {
-            "path": "W:/gba",
-            "folder_exclude_patterns": [".vs", "Debug"],
+            "path": ".",
         },
     ],
     "settings":
     {
     },
+    "build_systems":
+    [
+        {
+            "name": "run",
+            "cmd": ["cargo", "run"],
+            "working_dir": "$project_path",
+        }
+    ]
 }

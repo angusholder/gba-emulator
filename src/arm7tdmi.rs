@@ -23,8 +23,7 @@ pub enum ConditionCode {
 impl From<u32> for ConditionCode {
     fn from(bits: u32) -> Self {
         use self::ConditionCode::*;
-        let code = bits >> 28 & 0b1111;
-        match code {
+        match bits {
             0b0000 => Eq,
             0b0001 => Ne,
             0b0010 => Cs,
@@ -40,7 +39,7 @@ impl From<u32> for ConditionCode {
             0b1100 => Gt,
             0b1101 => Le,
             0b1110 => Al,
-            _ => panic!("Invalid condition code {:b}.", code),
+            _ => unreachable!(),
         }
     }
 }

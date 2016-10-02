@@ -9,13 +9,19 @@ mod thumb_core;
 mod arm_core;
 mod disassemble;
 
+#[macro_use]
+mod utils;
+mod io;
+
+use io::LCDControl;
+
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use arm_core::step_arm;
 use thumb_core::step_thumb;
 use arm7tdmi::{ Arm7TDMI, REG_PC };
 
 fn main() {
-    let mut file = File::open("W:/gba/Game Boy Advance (W).gba").unwrap();
+    let mut file = File::open("roms/bios.bin").unwrap();
     let mut bios = Vec::new();
     file.read_to_end(&mut bios).unwrap();
 
