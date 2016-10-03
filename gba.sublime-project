@@ -11,9 +11,21 @@
     "build_systems":
     [
         {
-            "name": "run",
-            "cmd": ["cargo", "run"],
+            "name": "Cargo Project",
             "working_dir": "$project_path",
+            "quiet": true,
+            "variants":
+            [
+                {
+                    "name": "Run",
+                    "cmd": "cargo run",
+                },
+                {
+                    "name": "Run With Backtrace",
+                    "cmd": "cargo run",
+                    "env": { "RUST_BACKTRACE": "1" }
+                },
+            ]
         }
     ]
 }
