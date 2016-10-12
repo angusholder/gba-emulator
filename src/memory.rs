@@ -135,11 +135,19 @@ impl Memory {
     pub fn read8(&self, addr: u32) -> u8 {
         match addr >> 24 {
             // TODO: Handle out of bounds, currently we panic
-            0x0 | 0x1 => self.system_rom.read8(addr),
+            0x0 | 0x1 => {
+                self.system_rom.read8(addr)
+            }
 
-            0x2 => self.ewram.read8((addr - EWRAM_START) & EWRAM_MASK),
-            0x3 => self.iwram.read8((addr - IWRAM_START) & IWRAM_MASK),
-            0x6 => self.vram.read8((addr - VRAM_START) & VRAM_MASK),
+            0x2 => {
+                self.ewram.read8((addr - EWRAM_START) & EWRAM_MASK)
+            }
+            0x3 => {
+                self.iwram.read8((addr - IWRAM_START) & IWRAM_MASK)
+            }
+            0x6 => {
+                self.vram.read8((addr - VRAM_START) & VRAM_MASK)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
@@ -154,13 +162,22 @@ impl Memory {
     }
 
     pub fn read16(&self, addr: u32) -> u16 {
+        if addr & 1 != 0 { panic!("Unaligned halfword read at 0x{:08X}", addr); }
         match addr >> 24 {
             // TODO: Handle out of bounds, currently we panic
-            0x0 | 0x1 => self.system_rom.read16(addr),
+            0x0 | 0x1 => {
+                self.system_rom.read16(addr)
+            }
 
-            0x2 => self.ewram.read16((addr - EWRAM_START) & EWRAM_MASK),
-            0x3 => self.iwram.read16((addr - IWRAM_START) & IWRAM_MASK),
-            0x6 => self.vram.read16((addr - VRAM_START) & VRAM_MASK),
+            0x2 => {
+                self.ewram.read16((addr - EWRAM_START) & EWRAM_MASK)
+            }
+            0x3 => {
+                self.iwram.read16((addr - IWRAM_START) & IWRAM_MASK)
+            }
+            0x6 => {
+                self.vram.read16((addr - VRAM_START) & VRAM_MASK)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
@@ -173,13 +190,22 @@ impl Memory {
     }
 
     pub fn read32(&self, addr: u32) -> u32 {
+        if addr & 3 != 0 { panic!("Unaligned word read at 0x{:08X}", addr); }
         match addr >> 24 {
             // Handle out of bounds, currently we panic
-            0x0 | 0x1 => self.system_rom.read32(addr),
+            0x0 | 0x1 => {
+                self.system_rom.read32(addr)
+            }
 
-            0x2 => self.ewram.read32((addr - EWRAM_START) & EWRAM_MASK),
-            0x3 => self.iwram.read32((addr - IWRAM_START) & IWRAM_MASK),
-            0x6 => self.vram.read32((addr - VRAM_START) & VRAM_MASK),
+            0x2 => {
+                self.ewram.read32((addr - EWRAM_START) & EWRAM_MASK)
+            }
+            0x3 => {
+                self.iwram.read32((addr - IWRAM_START) & IWRAM_MASK)
+            }
+            0x6 => {
+                self.vram.read32((addr - VRAM_START) & VRAM_MASK)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
@@ -209,9 +235,15 @@ impl Memory {
 
     pub fn write8(&mut self, addr: u32, value: u8) {
         match addr >> 24 {
-            0x2 => self.ewram.write8((addr - EWRAM_START) & EWRAM_MASK, value),
-            0x3 => self.iwram.write8((addr - IWRAM_START) & IWRAM_MASK, value),
-            0x6 => self.vram.write8((addr - VRAM_START) & VRAM_MASK, value),
+            0x2 => {
+                self.ewram.write8((addr - EWRAM_START) & EWRAM_MASK, value)
+            }
+            0x3 => {
+                self.iwram.write8((addr - IWRAM_START) & IWRAM_MASK, value)
+            }
+            0x6 => {
+                self.vram.write8((addr - VRAM_START) & VRAM_MASK, value)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
@@ -226,10 +258,17 @@ impl Memory {
     }
 
     pub fn write16(&mut self, addr: u32, value: u16) {
+        if addr & 1 != 0 { panic!("Unaligned halfword write at 0x{:08X} of 0x{:08X}", addr, value); }
         match addr >> 24 {
-            0x2 => self.ewram.write16((addr - EWRAM_START) & EWRAM_MASK, value),
-            0x3 => self.iwram.write16((addr - IWRAM_START) & IWRAM_MASK, value),
-            0x6 => self.vram.write16((addr - VRAM_START) & VRAM_MASK, value),
+            0x2 => {
+                self.ewram.write16((addr - EWRAM_START) & EWRAM_MASK, value)
+            }
+            0x3 => {
+                self.iwram.write16((addr - IWRAM_START) & IWRAM_MASK, value)
+            }
+            0x6 => {
+                self.vram.write16((addr - VRAM_START) & VRAM_MASK, value)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
@@ -242,10 +281,17 @@ impl Memory {
     }
 
     pub fn write32(&mut self, addr: u32, value: u32) {
+        if addr & 1 != 0 { panic!("Unaligned word write at 0x{:08X} of 0x{:08X}", addr, value); }
         match addr >> 24 {
-            0x2 => self.ewram.write32((addr - EWRAM_START) & EWRAM_MASK, value),
-            0x3 => self.iwram.write32((addr - IWRAM_START) & IWRAM_MASK, value),
-            0x6 => self.vram.write32((addr - VRAM_START) & VRAM_MASK, value),
+            0x2 => {
+                self.ewram.write32((addr - EWRAM_START) & EWRAM_MASK, value)
+            }
+            0x3 => {
+                self.iwram.write32((addr - IWRAM_START) & IWRAM_MASK, value)
+            }
+            0x6 => {
+                self.vram.write32((addr - VRAM_START) & VRAM_MASK, value)
+            }
 
             0x4 => {
                 match addr - 0x0400_0000 {
