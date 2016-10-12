@@ -161,22 +161,22 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                     rn ^ operand2
                 }
                 0b0010 => { // SUB
-                    rn - operand2
+                    rn.wrapping_sub(operand2)
                 }
                 0b0011 => { // RSB
-                    operand2 - rn
+                    operand2.wrapping_sub(rn)
                 }
                 0b0100 => { // ADD
-                    rn + operand2
+                    rn.wrapping_add(operand2)
                 }
                 0b0101 => { // ADC
-                    rn + (operand2 + (arm.cpsr.c as u32))
+                    rn.wrapping_add(operand2.wrapping_add(arm.cpsr.c as u32))
                 }
                 0b0110 => { // SBC
-                    rn - (operand2 + 1 - (arm.cpsr.c as u32))
+                    rn.wrapping_sub(operand2.wrapping_add(!arm.cpsr.c as u32))
                 }
                 0b0111 => { // RSC
-                    operand2 - (rn + 1 - (arm.cpsr.c as u32))
+                    operand2.wrapping_sub(rn.wrapping_add(!arm.cpsr.c as u32))
                 }
                 0b1000 if set_cc => { // TST
                     let result = rn & operand2;
@@ -189,13 +189,13 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                     return;
                 }
                 0b1010 if set_cc => { // CMP
-                    let result = rn - operand2;
+                    let result = rn.wrapping_sub(operand2);
                     set_zn(arm, result);
                     sub_set_vc(arm, rn, operand2, result);
                     return;
                 }
                 0b1011 if set_cc => { // CMN
-                    let result = rn + operand2;
+                    let result = rn.wrapping_add(operand2);
                     set_zn(arm, result);
                     add_set_vc(arm, rn, operand2, result);
                     return;
