@@ -18,11 +18,11 @@
             [
                 {
                     "name": "Run",
-                    "cmd": "cargo run",
+                    "cmd": ["cargo", "run"],
                 },
                 {
                     "name": "Run With Backtrace",
-                    "cmd": "cargo run",
+                    "cmd": ["cargo", "run"],
                     "env": { "RUST_BACKTRACE": "1" }
                 },
             ]
