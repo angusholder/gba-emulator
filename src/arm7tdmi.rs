@@ -166,11 +166,11 @@ impl Default for StatusRegister {
 impl fmt::Display for StatusRegister {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "({n}{z}{c}{v}{t}{irq}{fiq}, {mode:?})",
-            n = if self.n {"N"} else {"n"},
-            z = if self.z {"Z"} else {"z"},
-            c = if self.c {"C"} else {"c"},
-            v = if self.v {"V"} else {"v"},
-            t = if self.thumb_mode {"T"} else {"t"},
+            n = if self.n {"n"} else {"-"},
+            z = if self.z {"z"} else {"-"},
+            c = if self.c {"c"} else {"-"},
+            v = if self.v {"v"} else {"-"},
+            t = if self.thumb_mode {"t"} else {"-"},
             irq = if self.irq_disable {""} else {", irq"},
             fiq = if self.fiq_disable {""} else {", fiq"},
             mode = self.mode,
@@ -349,7 +349,7 @@ impl Arm7TDMI {
             OperatingMode::Abort      => helper(&mut self.regs, &mut self.abt_lr, &mut self.abt_sp),
             OperatingMode::Irq        => helper(&mut self.regs, &mut self.irq_lr, &mut self.irq_sp),
             OperatingMode::Undefined  => helper(&mut self.regs, &mut self.und_lr, &mut self.und_sp),
-            OperatingMode::Fiq        => unreachable!(),
+            OperatingMode::Fiq        => unreachable!(), // We don't support this currently
             OperatingMode::Invalid    => unreachable!(),
             OperatingMode::User | OperatingMode::System => {}
         }
@@ -440,35 +440,30 @@ impl Arm7TDMI {
     }
 
     pub fn branch_to(&mut self, addr: u32) {
+        let step = self.get_op_size();
         if self.cpsr.thumb_mode {
             assert!(addr & 1 == 0);
-            let step = 2;
             self.mem.prefetch[0] = self.mem.exec16(addr) as u32;
             self.mem.prefetch[1] = self.mem.exec16(addr + step) as u32;
             self.regs[REG_PC] = addr + step;
         } else {
             assert!(addr & 3 == 0);
-            let step = 4;
             self.mem.prefetch[0] = self.mem.exec32(addr);
             self.mem.prefetch[1] = self.mem.exec32(addr + step);
             self.regs[REG_PC] = addr + step;
         }
     }
 
-    pub fn fetch_next_opcode(&mut self) -> u32 {
-        if self.cpsr.thumb_mode {
-            self.regs[REG_PC] += 2;
-        } else {
-            self.regs[REG_PC] += 4;
-        }
+    pub fn branch_exchange(&mut self, addr: u32) {
+        self.cpsr.thumb_mode = (addr & 1) != 0;
+        self.branch_to(addr & !1u32);
+    }
 
-        let opcode = self.mem.prefetch[0];
-        self.mem.prefetch[0] = self.mem.prefetch[1];
-        self.mem.prefetch[1] = if self.cpsr.thumb_mode {
-            self.mem.exec16(self.regs[REG_PC]) as u32
+    pub fn get_op_size(&self) -> u32 {
+        if self.cpsr.thumb_mode {
+            2
         } else {
-            self.mem.exec32(self.regs[REG_PC])
-        };
-        opcode
+            4
+        }
     }
 }

@@ -75,7 +75,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
     match op >> 8 {
         0x00 ... 0x07 => { // LSL
             let rs = arm.regs[(op >> 3 & 7) as usize];
-            let imm = (op >> 6 & 0x1F) as u8;
+            let imm = op >> 6 & 0x1F;
             let result = rs << imm;
             set_zn(arm, result);
             arm.regs[(op & 7) as usize] = result;
@@ -83,7 +83,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0x08 ... 0x0F => { // LSR
             let rs = arm.regs[(op >> 3 & 7) as usize];
-            let imm = (op >> 6 & 0x1F) as u8;
+            let imm = op >> 6 & 0x1F;
             let result = rs >> imm;
             set_zn(arm, result);
             arm.regs[(op & 7) as usize] = result;
@@ -91,7 +91,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0x10 ... 0x17 => { // ASR
             let rs = arm.regs[(op >> 3 & 7) as usize];
-            let imm = (op >> 6 & 0x1F) as u8;
+            let imm = op >> 6 & 0x1F;
             let result = ((rs as i32) >> imm) as u32;
             set_zn(arm, result);
             arm.regs[(op & 7) as usize] = result;
@@ -100,7 +100,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         0x18 | 0x19 => { // ADD Rd, Rs, Rn
             let rs = arm.regs[(op >> 3 & 7) as usize];
             let rn = arm.regs[(op >> 6 & 7) as usize];
-            let result = rs + rn;
+            let result = rs.wrapping_add(rn);
             set_zn(arm, result);
             add_set_vc(arm, rs, rn, result);
             arm.regs[(op & 7) as usize] = result;
@@ -117,8 +117,8 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0x1C | 0x1D => { // ADD Rd, #imm3
             let rs = arm.regs[(op >> 3 & 7) as usize];
-            let imm = (op >> 6 & 7) as u32;
-            let result = rs + imm;
+            let imm = op >> 6 & 7;
+            let result = rs.wrapping_add(imm);
             set_zn(arm, result);
             add_set_vc(arm, rs, imm, result);
             arm.regs[(op & 7) as usize] = result;
@@ -126,42 +126,42 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0x1E | 0x1F => { // SUB Rd, #imm3
             let rs = arm.regs[(op >> 3 & 7) as usize];
-            let imm = (op >> 6 & 7) as u32;
-            let result = rs - imm;
+            let imm = op >> 6 & 7;
+            let result = rs.wrapping_sub(imm);
             set_zn(arm, result);
             sub_set_vc(arm, rs, imm, result);
             arm.regs[(op & 7) as usize] = result;
         }
 
         0x20 ... 0x27 => { // MOV Rd, #imm8
-            let imm = (op & 0xFF) as u32;
+            let imm = op & 0xFF;
             set_zn(arm, imm);
             arm.regs[(op >> 8 & 7) as usize] = imm;
         }
 
         0x28 ... 0x2F => { // CMP Rd, #imm8
-            let imm = (op & 0xFF) as u32;
+            let imm = op & 0xFF;
             let rd = arm.regs[(op >> 8 & 7) as usize];
-            let result = rd - imm;
+            let result = rd.wrapping_sub(imm);
             set_zn(arm, result);
             sub_set_vc(arm, rd, imm, result);
         }
 
         0x30 ... 0x37 => { // ADD Rd, #imm8
-            let imm = (op & 0xFF) as u32;
+            let imm = op & 0xFF;
             let rd_index = (op >> 8 & 7) as usize;
             let rd = arm.regs[rd_index];
-            let result = rd + imm;
+            let result = rd.wrapping_add(imm);
             set_zn(arm, result);
             add_set_vc(arm, rd, imm, result);
             arm.regs[rd_index] = result;
         }
 
         0x38 ... 0x3F => { // SUB Rd, #imm8
-            let imm = (op & 0xFF) as u32;
+            let imm = op & 0xFF;
             let rd_index = (op >> 8 & 7) as usize;
             let rd = arm.regs[rd_index];
-            let result = rd + imm;
+            let result = rd.wrapping_sub(imm);
             set_zn(arm, result);
             sub_set_vc(arm, rd, imm, result);
             arm.regs[rd_index] = result;
@@ -198,12 +198,12 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
                     arm.cpsr.c = ((rd >> (rs - 1)) & 1) != 0;
                 }
                 0b0101 => { // ADC Rd, Rs
-                    result = rd + rs + (arm.cpsr.c as u32);
+                    result = rd.wrapping_add(rs).wrapping_add(arm.cpsr.c as u32);
                     set_zn(arm, result);
                     add_set_vc(arm, rd, rs, result);
                 }
                 0b0110 => { // SBC Rd, Rs
-                    result = rs - (rs + 1 - (arm.cpsr.c as u32));
+                    result = rs.wrapping_sub(rs).wrapping_sub(!arm.cpsr.c as u32);
                     set_zn(arm, result);
                     sub_set_vc(arm, rd, rs, result);
                 }
@@ -228,7 +228,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
                     return;
                 }
                 0b1011 => { // CMN Rd, Rs
-                    result = rs + rd;
+                    result = rs.wrapping_add(rd);
                     set_zn(arm, result);
                     add_set_vc(arm, rd, rs, result);
                     return;
@@ -258,12 +258,12 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         0x44 => { // ADD
             let rs = arm.regs[(op >> 3 & 0xF) as usize];
             let rd_index = ((op & 0b111) | ((op & 0x80) >> 4)) as usize;
-            arm.regs[rd_index] += rs;
+            arm.regs[rd_index] = arm.regs[rd_index].wrapping_add(rs);
         }
         0x45 => { // CMP
             let rs = arm.regs[(op >> 3 & 0xF) as usize];
             let rd = arm.regs[((op & 0b111) | ((op & 0x80) >> 4)) as usize];
-            let result = rd - rs;
+            let result = rd.wrapping_sub(rs);
             set_zn(arm, result);
             sub_set_vc(arm, rd, rs, result);
         }
@@ -274,13 +274,12 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         }
         0x47 => { // BX
             let rs = arm.regs[(op >> 3 & 0xF) as usize];
-            arm.cpsr.thumb_mode = (rs & 1) != 0;
-            arm.branch_to(rs & !1);
+            arm.branch_exchange(rs);
         }
 
         0x48 ... 0x4F => { // LDR Rd, [PC, #imm8]
-            let offset = ((op & 0xFF) << 2) as u32;
-            let addr = arm.regs[REG_PC] + offset;
+            let offset = (op & 0xFF) << 2;
+            let addr = (arm.regs[REG_PC] & !2) + offset;
             arm.regs[(op >> 8 & 7) as usize] = arm.mem.read32(addr);
         }
 
@@ -330,27 +329,27 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0x90 ... 0x97 => { // STR Rd, [SP, #imm8]
             let rd = arm.regs[(op >> 8 & 7) as usize];
-            let offset = ((op & 0xFF) as u32) * mem::size_of::<u32> as u32;
+            let offset = (op & 0xFF) << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
             arm.mem.write32(addr, rd);
         }
         0x98 ... 0x9F => { // LDR Rd, [SP, #imm8]
-            let offset = ((op & 0xFF) as u32) * mem::size_of::<u32> as u32;
+            let offset = (op & 0xFF) << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
             arm.regs[(op >> 8 & 7) as usize] = arm.mem.read32(addr);
         }
 
         0xA0 ... 0xA7 => { // ADD Rd, PC, #imm8
-            let imm = (op & 0xF) as u32;
+            let imm = (op & 0xF) << 2;
             arm.regs[(op >> 8 & 7) as usize] = arm.regs[REG_PC] + imm;
         }
         0xA8 ... 0xAF => { // ADD Rd, SP, #imm8
-            let imm = (op & 0xF) as u32;
+            let imm = (op & 0xF) << 2;
             arm.regs[(op >> 8 & 7) as usize] = arm.regs[REG_SP] + imm;
         }
 
         0xB0 => { // ADD SP, {+-}#imm7
-            let offset = (op & 0x7F) as u32;
+            let offset = (op & 0x7F) << 2;
             if (op & 0x80) == 0 {
                 arm.regs[REG_SP] += offset;
             } else {
@@ -436,6 +435,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
         0xDF => { // SWI #value8
             // let comment = (op & 0xFF) as u8;
+            // arm.execute_swi(comment);
             unimplemented!();
         }
 
@@ -451,7 +451,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         }
         0xF8 ... 0xFF => { // BL (low)
             let lo_offset = (op & 0x7FF) << 1;
-            arm.regs[REG_LR] += lo_offset;
+            arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);
             let temp = arm.regs[REG_PC];
             let target = arm.regs[REG_LR];
             arm.branch_to(target);

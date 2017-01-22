@@ -28,17 +28,26 @@ fn main() {
     arm.sig_reset();
 
     loop {
-        let op = arm.fetch_next_opcode();
+        let step = arm.get_op_size();
+        arm.regs[REG_PC] += step;
+
+        let op = arm.mem.prefetch[0];
+        arm.mem.prefetch[0] = arm.mem.prefetch[1];
+        arm.mem.prefetch[1] = if arm.cpsr.thumb_mode {
+            arm.mem.exec16(arm.regs[REG_PC]) as u32
+        } else {
+            arm.mem.exec32(arm.regs[REG_PC])
+        };
 
         if arm.cpsr.thumb_mode {
             debug_assert!(arm.regs[REG_PC] & 1 == 0);
-            let dis = disassemble_thumb_opcode(&arm.mem, arm.regs[REG_PC] - 4);
-            println!("@{:08X}: ({:04X}): {}", arm.regs[REG_PC] - 4, op, dis);
+            let dis = disassemble_thumb_opcode(&arm.mem, arm.regs[REG_PC] - 2*step);
+            println!("@{:08X}: ({:04X}): {}", arm.regs[REG_PC] - 2*step, op, dis);
             step_thumb(&mut arm, op as u16);
         } else {
             debug_assert!(arm.regs[REG_PC] & 3 == 0);
-            let dis = disassemble_arm_opcode(op, arm.regs[REG_PC] - 8);
-            println!("@{:08X}: ({:08X}): {}", arm.regs[REG_PC] - 8, op, dis);
+            let dis = disassemble_arm_opcode(op, arm.regs[REG_PC] - 2*step);
+            println!("@{:08X}: ({:08X}): {}", arm.regs[REG_PC] - 2*step, op, dis);
             step_arm(&mut arm, op);
         }
 

@@ -115,8 +115,6 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
         }
     }
 
-    let pc = arm.regs[REG_PC];
-
     let cond = ConditionCode::from(op >> 28);
     if !arm.eval_condition_code(cond) {
         return;
@@ -231,7 +229,10 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
 
                             assert!(new_psr.thumb_mode == arm.cpsr.thumb_mode);
                             if !arm.cpsr.mode.is_privileged() {
+                                // User mode may only change flags
                                 assert!(new_psr.mode == arm.cpsr.mode);
+                                assert!(new_psr.irq_disable == arm.cpsr.irq_disable);
+                                assert!(new_psr.fiq_disable == arm.cpsr.fiq_disable);
                             }
 
                             if use_cpsr {
@@ -252,8 +253,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                         }
                         0b101111 => { // BX
                             let rn = arm.regs[(op & 0xF) as usize];
-                            arm.cpsr.thumb_mode = (rn & 1) != 0;
-                            arm.branch_to(rn & !1u32);
+                            arm.branch_exchange(rn);
                         }
 
                         _ => invalid!(op),
@@ -329,24 +329,28 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
         0x009 | 0x019 | 0x029 | 0x039 => { // Multiply
             let accumulate = (op & 0x00200000) != 0;
             let set_cc = (op & 0x00100000) != 0;
-            let rd = (op >> 16 & 0xF) as usize;
-            let rn = (op >> 12 & 0xF) as usize;
-            let rs = (op >> 8 & 0xF) as usize;
-            let rm = (op & 0xF) as usize;
+            let rd_index = (op >> 16 & 0xF) as usize;
+            let rn_index = (op >> 12 & 0xF) as usize;
+            let rs_index = (op >> 8 & 0xF) as usize;
+            let rm_index = (op & 0xF) as usize;
 
-            assert!(rd != rm);
-            assert!(rd != REG_PC);
-            assert!(rs != REG_PC);
-            assert!(rn != REG_PC);
-            assert!(rm != REG_PC);
+            assert!(rd_index != rm_index);
+            assert!(rd_index != REG_PC);
+            assert!(rs_index != REG_PC);
+            assert!(rn_index != REG_PC);
+            assert!(rm_index != REG_PC);
+
+            let rn = arm.regs[rn_index];
+            let rs = arm.regs[rs_index];
+            let rm = arm.regs[rm_index];
 
             let result = if accumulate {
-                arm.regs[rm] * arm.regs[rs] + arm.regs[rn]
+                (rm * rs).wrapping_add(rn)
             } else {
-                arm.regs[rm] * arm.regs[rs]
+                rm.wrapping_mul(rs)
             };
 
-            arm.regs[rd] = result;
+            arm.regs[rd_index] = result;
             if set_cc {
                 arm.cpsr.z = result == 0;
                 arm.cpsr.n = (result >> 31) != 0;
@@ -359,40 +363,40 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             let unsigned = (op & 0x00400000) != 0;
             let accumulate = (op & 0x00200000) != 0;
             let set_cc = (op & 0x00100000) != 0;
-            let rd_hi = (op >> 16 & 0xF) as usize;
-            let rd_lo = (op >> 12 & 0xF) as usize;
-            let rs = (op >> 8 & 0xF) as usize;
-            let rm = (op & 0xF) as usize;
+            let rd_hi_index = (op >> 16 & 0xF) as usize;
+            let rd_lo_index = (op >> 12 & 0xF) as usize;
+            let rs_index = (op >> 8 & 0xF) as usize;
+            let rm_index = (op & 0xF) as usize;
 
-            assert!(rd_hi != REG_PC);
-            assert!(rd_lo != REG_PC);
-            assert!(rs != REG_PC);
-            assert!(rm != REG_PC);
-            assert!(rd_hi != rd_lo);
-            assert!(rd_hi != rm);
-            assert!(rd_lo != rm);
+            assert!(rd_hi_index != REG_PC);
+            assert!(rd_lo_index != REG_PC);
+            assert!(rs_index != REG_PC);
+            assert!(rm_index != REG_PC);
+            assert!(rd_hi_index != rd_lo_index);
+            assert!(rd_hi_index != rm_index);
+            assert!(rd_lo_index != rm_index);
 
             let result: u64 = if unsigned {
-                let a = arm.regs[rm] as u64;
-                let b = arm.regs[rs] as u64;
+                let a = arm.regs[rm_index] as u64;
+                let b = arm.regs[rs_index] as u64;
 
                 let result: u64 = if accumulate {
-                    let low = arm.regs[rd_lo] as u64;
-                    let high = arm.regs[rd_hi] as u64;
+                    let low = arm.regs[rd_lo_index] as u64;
+                    let high = arm.regs[rd_hi_index] as u64;
                     let c = low | (high << 32);
-                    a * b + c
+                    a.wrapping_mul(b).wrapping_add(c)
                 } else {
-                    a * b
+                    a.wrapping_mul(b)
                 };
 
                 result
             } else {
-                let a = arm.regs[rm] as i32 as i64;
-                let b = arm.regs[rs] as i32 as i64;
+                let a = arm.regs[rm_index] as i32 as i64;
+                let b = arm.regs[rs_index] as i32 as i64;
 
                 let result: i64 = if accumulate {
-                    let low = arm.regs[rd_lo] as i32 as i64;
-                    let high = arm.regs[rd_hi] as i32 as i64;
+                    let low = arm.regs[rd_lo_index] as i32 as i64;
+                    let high = arm.regs[rd_hi_index] as i32 as i64;
                     let c = low | (high << 32);
                     a * b + c
                 } else {
@@ -409,8 +413,8 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 arm.cpsr.v = false; // Meaningless value
             }
 
-            arm.regs[rd_lo] = result as u32;
-            arm.regs[rd_hi] = (result >> 32) as u32;
+            arm.regs[rd_lo_index] = result as u32;
+            arm.regs[rd_hi_index] = (result >> 32) as u32;
         }
 
         // 0b01xx_xxxx_axxb given a!=1 || b!=1
@@ -551,12 +555,13 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 (op & 0xFF_FFFF) << 2
             };
 
+            let pc = arm.regs[REG_PC];
             let addr = pc.wrapping_add(offset);
 
             if link {
                 // PC is 8 bytes ahead of this instruction, we want LR to
                 // point to the instruction after this current one.
-                arm.regs[REG_LR] = arm.regs[REG_PC] - 4;
+                arm.regs[REG_LR] = pc - 4;
             }
 
             arm.branch_to(addr);
