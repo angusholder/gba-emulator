@@ -2,7 +2,6 @@ use std::fmt::Write;
 use memory::Memory;
 use arm7tdmi::{ REG_PC, REG_LR };
 
-// TODO: This is duplicated in the Bcc case in disassemble_thumb_opcode()
 static CC_NAMES: [&'static str; 15] = [
     "EQ", // 0000 Z                 equal
     "NE", // 0001 !Z                not equal
@@ -27,33 +26,6 @@ static ARM_REGS: [&'static str; 16] = [
 ];
 
 fn build_register_list(registers: u16) -> String {
-    // let mut rlist: Vec<String> = Vec::new();
-    // let mut last: Option<usize> = None;
-
-    // for i in 0..reg_names.len() {
-    //     if (registers & (1 << i)) != 0 {
-    //         if last.is_none() {
-    //             last = Some(i);
-    //         }
-    //     } else {
-    //         if let Some(n) = last {
-    //             if i - 1 == n {
-    //                 rlist.push(format!("{}", reg_names[n]));
-    //             } else {
-    //                 rlist.push(format!("{}-{}", reg_names[n], reg_names[i - 1]));
-    //             }
-    //             last = None;
-    //         }
-    //     }
-    // }
-
-    // if let Some(n) = last {
-    //     if n == reg_names.len() - 1 {
-    //         rlist.push(format!("{}", reg_names[reg_names.len() - 1]));
-    //     } else {
-    //         rlist.push(format!("{}-{}", reg_names[n], reg_names[reg_names.len() - 1]));
-    //     }
-    // }
     let registers = registers as usize;
     let mut result = String::new();
     let mut n = 0;
