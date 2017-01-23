@@ -538,18 +538,29 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             }
         }
 
-        // 0x109 | 0x149 => { // Single Data Swap
-        //     let byte = (op & 0x0040_0000) != 0;
-        //     let rm = (op & 0xF) as usize;
-        //     let rd = (op >> 12 & 0xF) as usize;
-        //     let rn = (op >> 16 & 0xF) as usize;
+        0x109 | 0x149 => { // Single Data Swap
+            let byte = (op & 0x0040_0000) != 0;
+            let rm_index = (op & 0xF) as usize;
+            let rd_index = (op >> 12 & 0xF) as usize;
+            let rn_index = (op >> 16 & 0xF) as usize;
 
-        //     format!("SWP{cond}{byte} {rd}, {rm}, [{rn}]",
-        //         rm = ARM_REGS[rm], rd = ARM_REGS[rd], rn = ARM_REGS[rn],
-        //         cond = cond,
-        //         byte = if byte {"B"} else {""}
-        //     )
-        // }
+            assert!(rm_index != REG_PC);
+            assert!(rd_index != REG_PC);
+            assert!(rn_index != REG_PC);
+
+            let rn = arm.regs[rn_index];
+            let rm = arm.regs[rm_index];
+
+            if byte {
+                let old = arm.mem.read8(rn) as u32;
+                arm.regs[rd_index] = old;
+                arm.mem.write8(rn, rm as u8);
+            } else {
+                let old = arm.mem.read32(rn);
+                arm.regs[rd_index] = old;
+                arm.mem.write32(rn, rm);
+            }
+        }
 
         // 0x601 ... 0x7FF if (mask & 1) == 1 => {
         //     format!("UNDEF {:08X}", op)
