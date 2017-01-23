@@ -419,8 +419,9 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
 
         // 0b01xx_xxxx_axxb given a!=1 || b!=1
         0x400 ... 0x7FF if (mask & 0x200) == 0 || (mask & 0b1111) != 0b1001 => { // Single Data Transfer
-            let rn = (op >> 16 & 0xF) as usize;
-            let rd = (op >> 12 & 0xF) as usize;
+            let rn_index = (op >> 16 & 0xF) as usize;
+            let rd_index = (op >> 12 & 0xF) as usize;
+            let rn = arm.regs[rn_index];
 
             let load = (op & 0x0010_0000) != 0;
             let writeback = (op & 0x0020_0000) != 0;
@@ -441,72 +442,101 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             }
 
             let addr = if preindex {
-                arm.regs[rn].wrapping_add(offset)
+                rn.wrapping_add(offset)
             } else {
-                arm.regs[rn]
+                rn
             };
 
             match (load, byte) {
-                (false, false) => arm.mem.write32(addr, arm.regs[rd]),
-                (false, true ) => arm.mem.write8(addr, arm.regs[rd] as u8),
-                (true , false) => arm.regs[rd] = arm.mem.read32(addr),
-                (true , true ) => arm.regs[rd] = arm.mem.read8(addr) as u32,
+                (false, false) => arm.mem.write32(addr, arm.regs[rd_index]),
+                (false, true ) => arm.mem.write8(addr, arm.regs[rd_index] as u8),
+                (true , false) => arm.regs[rd_index] = arm.mem.read32(addr),
+                (true , true ) => arm.regs[rd_index] = arm.mem.read8(addr) as u32,
             }
 
             if preindex {
                 if writeback {
-                    arm.regs[rn] = addr;
+                    arm.regs[rn_index] = addr;
                 }
             } else {
-                arm.regs[rn] += offset;
+                assert!(!writeback);
+                arm.regs[rn_index] += offset;
             }
         },
 
         // // Halfword and Signed Data Transfer
         // // When S=1, L must be 1
         // // Rm must not be R15(PC)
-        // 0x000 ... 0x1FF if (mask & 0b1001) == 0b1001 && (mask & 0b0110) != 0 => {
-        //     let load = (op & 0x0010_0000) != 0;
-        //     let writeback = (op & 0x0020_0000) != 0;
-        //     let use_imm = (op & 0x0040_0000) != 0;
-        //     let up = if (op & 0x0080_0000) != 0 {""} else {"-"};
-        //     let pre = (op & 0x0100_0000) != 0;
-        //     let rd = (op >> 12 & 0xF) as usize;
-        //     let rn = (op >> 16 & 0xF) as usize;
+        0x000 ... 0x1FF if (mask & 0b1001) == 0b1001 && (mask & 0b0110) != 0 => {
+            let load = (op & 0x0010_0000) != 0;
+            let writeback = (op & 0x0020_0000) != 0;
+            let use_imm = (op & 0x0040_0000) != 0;
+            let up = (op & 0x0080_0000) != 0;
+            let preindex = (op & 0x0100_0000) != 0;
+            let rd_index = (op >> 12 & 0xF) as usize;
+            let rn_index = (op >> 16 & 0xF) as usize;
+            let rn = arm.regs[rn_index];
 
-        //     let name = match (load, op >> 5 & 3) {
-        //         (true,  0b01) => "LDRH",
-        //         (true,  0b10) => "LDSB",
-        //         (true,  0b11) => "LDSH",
-        //         (false, 0b01) => "STRH",
-        //         _ => return invalid(op),
-        //     };
+            if writeback {
+                assert!(rn_index != REG_PC);
+            }
 
-        //     let offset = if use_imm {
-        //         let imm = (op & 0xF) | (op >> 4 & 0xF0);
-        //         format!("#{up}{imm}", up = up, imm = imm)
-        //     } else {
-        //         let rm = (op & 0xF) as usize;
-        //         format!("{up}{rm}", up = up, rm = ARM_REGS[rm])
-        //     };
+            let mut offset = if use_imm {
+                (op & 0xF) | (op >> 4 & 0xF0)
+            } else {
+                let rm_index = (op & 0xF) as usize;
+                assert!(rm_index != REG_PC);
+                arm.regs[rm_index]
+            };
 
-        //     if pre {
-        //         format!("{name}{cond} {rd}, [{rn}, {offset}]{writeback}",
-        //             writeback = if writeback {"!"} else {""},
-        //             name = name, cond = cond,
-        //             rd = ARM_REGS[rd],
-        //             rn = ARM_REGS[rn],
-        //             offset = offset
-        //         )
-        //     } else {
-        //         format!("{name}{cond} {rd}, [{rn}], {offset}",
-        //             name = name, cond = cond,
-        //             rd = ARM_REGS[rd],
-        //             rn = ARM_REGS[rn],
-        //             offset = offset
-        //         )
-        //     }
-        // }
+            if up {
+                // Make negative
+                offset = !offset + 1;
+            }
+
+            let addr = if preindex {
+                rn.wrapping_add(offset)
+            } else {
+                rn
+            };
+
+            match (load, op >> 5 & 3) {
+                // LDH
+                (true, 0b01) => {
+                    arm.regs[rd_index] = arm.mem.read16(addr) as u32;
+                }
+
+                // LDSB
+                (true, 0b10) => {
+                    arm.regs[rd_index] = arm.mem.read8(addr) as i8 as i32 as u32;
+                }
+
+                // LDSH
+                (true, 0b11) => {
+                    arm.regs[rd_index] = arm.mem.read16(addr) as i16 as i32 as u32;
+                }
+
+                // STH
+                (false, 0b01) => {
+                    arm.mem.write16(addr, arm.regs[rd_index] as u16);
+                }
+
+                // Signed stores aren't valid operations
+                (false, 0b10) | (false, 0b11) => unreachable!(),
+
+                (_, _) => unreachable!(),
+            }
+
+            if preindex {
+                if writeback {
+                    arm.regs[rn_index] = addr;
+                }
+            } else {
+                // Writeback is implicit with post-indexing, so this is invalid
+                assert!(!writeback);
+                arm.regs[rn_index] = rn.wrapping_add(offset);
+            }
+        }
 
         // 0x109 | 0x149 => { // Single Data Swap
         //     let byte = (op & 0x0040_0000) != 0;
