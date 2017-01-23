@@ -555,26 +555,105 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
         //     format!("UNDEF {:08X}", op)
         // }
 
-        // 0x800 ... 0x9FF => { // Block Data Transfer
-        //     let rn = (op >> 16 & 0xF) as usize;
-        //     let load = (op & 0x0010_0000) != 0;
-        //     let writeback = (op & 0x0020_0000) != 0;
-        //     let set_cc = (op & 0x0040_0000) != 0; // load PSR or force user mode
-        //     let up = (op & 0x0080_0000) != 0;
-        //     let pre = (op & 0x0100_0000) != 0;
-        //     let rlist = build_register_list((op & 0xFFFF) as u16);
+        0x800 ... 0x9FF => { // Block Data Transfer
+            let rn_index = (op >> 16 & 0xF) as usize;
+            let load = (op & 0x0010_0000) != 0;
+            let writeback = (op & 0x0020_0000) != 0;
+            let set_cc = (op & 0x0040_0000) != 0; // load PSR or force user mode
+            let up = (op & 0x0080_0000) != 0;
+            let preindex = (op & 0x0100_0000) != 0;
+            let reglist = op & 0xFFFF;
+            let pc_in_reglist = reglist & (1 << REG_PC) != 0;
 
-        //     format!("{name}{inc}{before}{cond} {rn}{writeback}, {{ {rlist} }}{set}",
-        //         name = if load {"LDM"} else {"STM"},
-        //         cond = cond,
-        //         inc = if up {"I"} else {"D"},
-        //         before = if pre {"B"} else {"A"},
-        //         rn = ARM_REGS[rn],
-        //         writeback = if writeback {"!"} else {""},
-        //         rlist = rlist,
-        //         set = if set_cc {"^"} else {""}
-        //     )
-        // }
+            // Register list cannot be empty
+            assert!(reglist != 0);
+            assert!(rn_index != REG_PC);
+
+            let offset = if up {4} else {!4 + 1};
+            let mut ptr = arm.regs[rn_index];
+
+            if preindex {
+                ptr = ptr.wrapping_add(offset);
+            }
+
+            if set_cc {
+                assert!(arm.cpsr.mode.is_privileged());
+
+                // If in STM or in LDM without PC in reglist then do a user
+                // bank transfer operation. Helpful for process context switches.
+                if !pc_in_reglist || !load {
+                    assert!(writeback);
+                    let from_mode = arm.cpsr.mode;
+                    arm.bank_swap(from_mode);
+                    arm.bank_swap(OperatingMode::User);
+                }
+            }
+
+            if load {
+                // If there is writeback and rn is in reglist, writeback always
+                // overwrites the value loaded by LDM, so we don't need any
+                // special handling here, as we do writeback last.
+                for i in 0..arm.regs.len()-1 {
+                    if reglist & (1 << i as u32) != 0 {
+                        arm.regs[i] = arm.mem.read32(ptr);
+                        ptr = ptr.wrapping_add(offset);
+                    }
+                }
+
+                if reglist & (1 << REG_PC) != 0 {
+                    let target = arm.mem.read32(ptr);
+                    arm.branch_to(target);
+                    ptr = ptr.wrapping_add(offset);
+
+                    if set_cc {
+                        arm.cpsr = arm.get_spsr();
+                    }
+                }
+            } else {
+                {
+                    let rn_mask = 1 << rn_index;
+                    let rn_is_in_reglist = reglist & rn_mask != 0;
+                    let rn_is_first_in_reglist = reglist & (rn_mask - 1) == 0;
+
+                    if rn_is_in_reglist && writeback {
+                        if !rn_is_first_in_reglist {
+                            // TODO: Work out what this means:
+                            /*
+                                "A STM which includes storing the base [...]
+                                with the base second or later in the transfer
+                                order, will store the modified value."
+                            */
+                            // Store base+4 or base+4*i or ..?
+                            unimplemented!();
+                        }
+                    }
+                }
+
+                for i in 0..arm.regs.len()-1 {
+                    if reglist & (1 << i as u32) != 0 {
+                        arm.mem.write32(ptr, arm.regs[i]);
+                        ptr = ptr.wrapping_add(offset);
+                    }
+                }
+
+                if reglist & (1 << REG_PC) != 0 {
+                    // "Whenever R15 is stored to memory the stored value is
+                    //  the address of the STM instruction plus 12."
+                    arm.mem.write32(ptr, arm.regs[REG_PC] + 4);
+                }
+            }
+
+            // Restore register bank mode from user mode
+            if set_cc && (!pc_in_reglist || !load) {
+                let to_mode = arm.cpsr.mode;
+                arm.bank_swap(OperatingMode::User);
+                arm.bank_swap(to_mode);
+            }
+
+            if writeback {
+                arm.regs[rn_index] = ptr;
+            }
+        }
 
         0xA00 ... 0xBFF => { // Branch / Branch with Link
             let link = (op & 0x0100_0000) != 0;

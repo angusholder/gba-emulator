@@ -337,7 +337,7 @@ impl Arm7TDMI {
         result
     }
 
-    fn bank_swap(&mut self, mode: OperatingMode) {
+    pub fn bank_swap(&mut self, mode: OperatingMode) {
         use std::mem;
         fn helper(regs: &mut [u32], lr: &mut u32, sp: &mut u32) {
             mem::swap(&mut regs[REG_LR], lr);
