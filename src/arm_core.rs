@@ -270,8 +270,6 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 match opcode {
                     0b0000 | // AND
                     0b0001 | // EOR
-                    0b1000 | // TST
-                    0b1001 | // TEQ
                     0b1100 | // ORR
                     0b1101 | // MOV
                     0b1110 | // BIC
@@ -279,8 +277,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                         set_zn(arm, result);
                     }
 
-                    0b0100 | // ADD
-                    0b1011 => { // CMN
+                    0b0100 => { // ADD
                         set_zn(arm, result);
                         add_set_vc(arm, rn, operand2, result);
                     }
@@ -290,8 +287,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                         sub_set_vc(arm, operand2, rn, result);
                     }
 
-                    0b0010 | // SUB
-                    0b1010 => { // CMP
+                    0b0010 => { // SUB
                         set_zn(arm, result);
                         sub_set_vc(arm, rn, operand2, result);
                     }
@@ -307,6 +303,13 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                     0b0111 => { // RSC
                         set_zn(arm, result);
                         sub_set_vc(arm, operand2, rn, result);
+                    }
+
+                    0b1010 | // CMP
+                    0b1011 | // CMN
+                    0b1000 | // TST
+                    0b1001 => { // TEQ
+                        unreachable!();
                     }
 
                     _ => unreachable!(),
@@ -692,11 +695,11 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
         //     panic!("Coprocessor operations unsupported");
         // }
 
-        // 0xF00 ... 0xFFF => { // Software Interrupt
+        0xF00 ... 0xFFF => { // Software Interrupt
             // GBA only uses most significant 8 bits of comment field, matching
             // the thumb version of the instruction.
-        //     format!("SWI{} #{:06X}", cond, op & 0x00FF_FFFF)
-        // }
+            arm.signal_swi();
+        }
 
         _ => invalid!(op),
     }

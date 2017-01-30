@@ -3,15 +3,15 @@
 use std::io::{ Read };
 use std::fs::File;
 
+#[macro_use]
+mod utils;
+mod io;
+
 mod arm7tdmi;
 mod memory;
 mod thumb_core;
 mod arm_core;
 mod disassemble;
-
-#[macro_use]
-mod utils;
-mod io;
 
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use arm_core::step_arm;
@@ -25,7 +25,7 @@ fn main() {
 
     let mut arm = Arm7TDMI::new(bios.into_boxed_slice());
 
-    arm.sig_reset();
+    arm.signal_reset();
 
     loop {
         let step = arm.get_op_size();

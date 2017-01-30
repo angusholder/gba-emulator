@@ -434,9 +434,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         0xDE => unreachable!(), // B{ALWAYS} is undefined
 
         0xDF => { // SWI #value8
-            // let comment = (op & 0xFF) as u8;
-            // arm.execute_swi(comment);
-            unimplemented!();
+            arm.signal_swi();
         }
 
         0xE0 ... 0xE7 => { // B #SOffset12

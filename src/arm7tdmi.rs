@@ -84,13 +84,12 @@ impl fmt::Display for ConditionCode {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
  #[repr(u32)]
 pub enum OperatingMode {
-    // TODO: BIOS sets SPSR.mode to 0, find away around this hack?
-    Invalid,
+    // BIOS sets SPSR.mode to 0, so we allow invalid mode bitpatterns but
+    // assert whenever in an invalid mode.
+    Invalid(u8),
     User,
-    Fiq, // Unused on GBA
     Irq,
     Supervisor,
-    Abort, // GBA has no virtual memory system, so should be unused
     Undefined, // Undefined instruction executed
     System,
 }
@@ -105,46 +104,52 @@ impl From<u32> for OperatingMode {
     fn from(bits: u32) -> Self {
         use self::OperatingMode::*;
         match bits & 0b11111 {
-            0 => Invalid,
             0b10000 => User,
-            0b10001 => Fiq,
+            0b10001 => {
+                panic!("ERROR: Tried to enter FIQ mode");
+            }
             0b10010 => Irq,
             0b10011 => Supervisor,
-            0b10111 => Abort,
+            0b10111 => {
+                panic!("ERROR: Tried to enter ABORT mode");
+            }
             0b11011 => Undefined,
             0b11111 => System,
-            _ => panic!("Invalid operating mode 0b{:b}", bits & 0b11111),
+            other => {
+                println!("WARNING: Entered invalid mode 0b{:5b}", other);
+                Invalid(other as u8)
+            }
         }
     }
 }
 
 impl From<OperatingMode> for u32 {
     fn from(mode: OperatingMode) -> Self {
-        use self::OperatingMode::*;
         match mode {
-            Invalid     => 0,
-            User        => 0b10000,
-            Fiq         => 0b10001,
-            Irq         => 0b10010,
-            Supervisor  => 0b10011,
-            Abort       => 0b10111,
-            Undefined   => 0b11011,
-            System      => 0b11111,
+            OperatingMode::User        => 0b10000,
+            OperatingMode::Irq         => 0b10010,
+            OperatingMode::Supervisor  => 0b10011,
+            OperatingMode::Undefined   => 0b11011,
+            OperatingMode::System      => 0b11111,
+            OperatingMode::Invalid(other) => other as u32,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct StatusRegister {
-    pub n: bool,
-    pub z: bool,
-    pub c: bool,
-    pub v: bool,
+unpacked_bitfield_struct! {
+    #[derive(Debug, Clone, Copy)]
+    pub struct StatusRegister: u32 {
+        (31,1) n: bool,
+        (30,1) z: bool,
+        (29,1) c: bool,
+        (28,1) v: bool,
 
-    pub irq_disable: bool,
-    pub fiq_disable: bool,
-    pub thumb_mode: bool,
-    pub mode: OperatingMode,
+        (7,1) irq_disable: bool,
+        (6,1) fiq_disable: bool,
+        (5,1) thumb_mode: bool,
+        (0,5) mode: OperatingMode,
+    }
+
 }
 
 impl Default for StatusRegister {
@@ -178,34 +183,6 @@ impl fmt::Display for StatusRegister {
     }
 }
 
-impl From<u32> for StatusRegister {
-    fn from(bits: u32) -> Self {
-        StatusRegister {
-            n: bits & (1 << 31) != 0,
-            z: bits & (1 << 30) != 0,
-            c: bits & (1 << 29) != 0,
-            v: bits & (1 << 28) != 0,
-            irq_disable: bits & (1 << 7) != 0,
-            fiq_disable: bits & (1 << 6) != 0,
-            thumb_mode: bits & (1 << 5) != 0,
-            mode: OperatingMode::from(bits),
-        }
-    }
-}
-
-impl From<StatusRegister> for u32 {
-    fn from(sr: StatusRegister) -> Self {
-        (sr.n as u32) << 31 |
-        (sr.z as u32) << 30 |
-        (sr.c as u32) << 29 |
-        (sr.v as u32) << 28 |
-        (sr.irq_disable as u32) << 7 |
-        (sr.fiq_disable as u32) << 6 |
-        (sr.thumb_mode as u32) << 5 |
-        (sr.mode as u32)
-    }
-}
-
 impl StatusRegister {
     pub fn set_flags(&mut self, bits: u32) {
         self.n = bits & (1 << 31) != 0;
@@ -230,11 +207,6 @@ pub struct Arm7TDMI {
     svc_sp: u32,
     svc_lr: u32,
     svc_spsr: StatusRegister,
-
-    // Abort Mode:
-    abt_sp: u32,
-    abt_lr: u32,
-    abt_spsr: StatusRegister,
 
     // IRQ Mode:
     irq_sp: u32,
@@ -317,9 +289,6 @@ impl Arm7TDMI {
             svc_sp: 0x03007FE0,
             svc_lr: 0,
 
-            abt_sp: 0,
-            abt_lr: 0,
-
             irq_sp: 0x03007FA0,
             irq_lr: 0,
 
@@ -327,7 +296,6 @@ impl Arm7TDMI {
             und_lr: 0,
 
             svc_spsr: Default::default(),
-            abt_spsr: Default::default(),
             irq_spsr: Default::default(),
             und_spsr: Default::default(),
         };
@@ -346,25 +314,11 @@ impl Arm7TDMI {
 
         match mode {
             OperatingMode::Supervisor => helper(&mut self.regs, &mut self.svc_lr, &mut self.svc_sp),
-            OperatingMode::Abort      => helper(&mut self.regs, &mut self.abt_lr, &mut self.abt_sp),
             OperatingMode::Irq        => helper(&mut self.regs, &mut self.irq_lr, &mut self.irq_sp),
             OperatingMode::Undefined  => helper(&mut self.regs, &mut self.und_lr, &mut self.und_sp),
-            OperatingMode::Fiq        => unreachable!(), // We don't support this currently
-            OperatingMode::Invalid    => unreachable!(),
+            OperatingMode::Invalid(_) => unreachable!(),
             OperatingMode::User | OperatingMode::System => {}
         }
-    }
-
-    pub fn sig_reset(&mut self) {
-        self.svc_lr = self.regs[REG_PC];
-        self.svc_spsr = self.cpsr;
-
-        self.switch_mode(OperatingMode::Supervisor);
-        self.cpsr.fiq_disable = true;
-        self.cpsr.irq_disable = true;
-        self.cpsr.thumb_mode = false;
-
-        self.branch_to(0u32);
     }
 
     pub fn switch_mode(&mut self, to_mode: OperatingMode) {
@@ -398,10 +352,8 @@ impl Arm7TDMI {
         match self.cpsr.mode {
             OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
             OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::Fiq        => unreachable!(),
-            OperatingMode::Invalid    => unreachable!(),
+            OperatingMode::Invalid(_) => unreachable!(),
             OperatingMode::Supervisor => self.svc_spsr,
-            OperatingMode::Abort      => self.abt_spsr,
             OperatingMode::Irq        => self.irq_spsr,
             OperatingMode::Undefined  => self.und_spsr,
         }
@@ -411,10 +363,8 @@ impl Arm7TDMI {
         match self.cpsr.mode {
             OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
             OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::Fiq        => unreachable!(),
-            OperatingMode::Invalid    => unreachable!(),
+            OperatingMode::Invalid(_) => unreachable!(),
             OperatingMode::Supervisor => &mut self.svc_spsr,
-            OperatingMode::Abort      => &mut self.abt_spsr,
             OperatingMode::Irq        => &mut self.irq_spsr,
             OperatingMode::Undefined  => &mut self.und_spsr,
         }
@@ -423,10 +373,8 @@ impl Arm7TDMI {
     pub fn set_spsr(&mut self, psr: StatusRegister) {
         match self.cpsr.mode {
             OperatingMode::User | OperatingMode::System => {},
-            OperatingMode::Fiq        => unreachable!(),
-            OperatingMode::Invalid    => unreachable!(),
+            OperatingMode::Invalid(_) => unreachable!(),
             OperatingMode::Supervisor => self.svc_spsr = psr,
-            OperatingMode::Abort      => self.abt_spsr = psr,
             OperatingMode::Irq        => self.irq_spsr = psr,
             OperatingMode::Undefined  => self.und_spsr = psr,
         }
@@ -434,8 +382,10 @@ impl Arm7TDMI {
 
     pub fn has_spsr(&self) -> bool {
         match self.cpsr.mode {
-            OperatingMode::User | OperatingMode::System => true,
-            _ => false,
+            OperatingMode::User |
+            OperatingMode::System |
+            OperatingMode::Invalid(_) => false,
+            _ => true,
         }
     }
 
@@ -465,5 +415,49 @@ impl Arm7TDMI {
         } else {
             4
         }
+    }
+
+    pub fn signal_reset(&mut self) {
+        const INTVEC_RESET: u32 = 0x0;
+
+        self.svc_lr = 0xDEADBEEF; // State is unpredictable on reset
+        self.switch_mode(OperatingMode::Supervisor);
+        self.cpsr.fiq_disable = true;
+        self.cpsr.irq_disable = true;
+        self.cpsr.thumb_mode = false;
+        self.branch_to(INTVEC_RESET);
+    }
+
+    pub fn signal_undef(&mut self) {
+        const INTVEC_UNDEFINED: u32 = 0x4;
+
+        self.und_spsr = self.cpsr;
+        self.und_lr = self.regs[REG_PC] + self.get_op_size();
+        self.switch_mode(OperatingMode::Undefined);
+        self.cpsr.thumb_mode = false;
+        self.branch_to(INTVEC_UNDEFINED);
+    }
+
+    pub fn signal_swi(&mut self) {
+        const INTVEC_SWI: u32 = 0x8;
+
+        self.svc_spsr = self.cpsr;
+        self.svc_lr = self.regs[REG_PC] + self.get_op_size();
+        self.switch_mode(OperatingMode::Supervisor);
+        self.cpsr.thumb_mode = false;
+        self.branch_to(INTVEC_SWI);
+    }
+
+    pub fn signal_irq(&mut self) {
+        const INTVEC_IRQ: u32 = 0x18;
+
+        if self.cpsr.irq_disable {
+            return;
+        }
+        self.irq_spsr = self.cpsr;
+        self.irq_lr = self.regs[REG_PC] + 4;
+        self.switch_mode(OperatingMode::Irq);
+        self.cpsr.thumb_mode = false;
+        self.branch_to(INTVEC_IRQ);
     }
 }
