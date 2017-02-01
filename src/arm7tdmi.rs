@@ -1,5 +1,5 @@
 use std::fmt;
-use memory::Memory;
+use interconnect::Interconnect;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ConditionCode {
@@ -116,7 +116,7 @@ impl From<u32> for OperatingMode {
             0b11011 => Undefined,
             0b11111 => System,
             other => {
-                println!("WARNING: Entered invalid mode 0b{:5b}", other);
+                println!("WARNING: Entered invalid mode 0b{:05b}", other);
                 Invalid(other as u8)
             }
         }
@@ -201,7 +201,7 @@ pub struct Arm7TDMI {
     pub cpsr: StatusRegister,
     pub regs: [u32; 16],
 
-    pub mem: Memory,
+    pub mem: Interconnect,
 
     // Supervisor Mode:
     svc_sp: u32,
@@ -282,7 +282,7 @@ static SWI_FN_NAMES: [&'static str; 43] = [
 impl Arm7TDMI {
     pub fn new(bios: Box<[u8]>) -> Arm7TDMI {
         let mut result = Arm7TDMI {
-            mem: Memory::new(bios),
+            mem: Interconnect::new(bios),
             cpsr: Default::default(),
             regs: Default::default(),
 

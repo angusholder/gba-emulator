@@ -1,5 +1,5 @@
 use std::fmt::Write;
-use memory::Memory;
+use interconnect::Interconnect;
 use arm7tdmi::{ REG_PC, REG_LR };
 
 static CC_NAMES: [&'static str; 15] = [
@@ -459,7 +459,7 @@ fn data_processing() {
     assert_eq!(disassemble_arm_opcode(0xE1030424), "TST R3, R4 LSR #8");
 }
 
-pub fn disassemble_thumb_opcode(memory: &Memory, pc: u32) -> String {
+pub fn disassemble_thumb_opcode(memory: &Interconnect, pc: u32) -> String {
     static ALU_OP_NAMES: [&'static str; 16] = [
         "AND", "EOR", "LSL", "LSR", "ASR", "ADC", "SBC", "ROR",
         "TST", "NEG", "CMP", "CMN", "ORR", "MUL", "BIC", "MVN",

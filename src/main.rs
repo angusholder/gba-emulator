@@ -8,7 +8,7 @@ mod utils;
 mod io;
 
 mod arm7tdmi;
-mod memory;
+mod interconnect;
 mod thumb_core;
 mod arm_core;
 mod disassemble;
