@@ -120,19 +120,19 @@ macro_rules! read_io_method {
         pub fn $fn_name(&self, addr: u32) -> $io_type {
             use std::cmp;
             let mut result: $io_type = 0;
-            let mut handled = false;
+            let mut bytes_handled = 0;
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
                 let mask: u32 = !(type_size - 1);
                 if (addr & mask) == ($case_addr & mask) {
-                    handled = true;
+                    bytes_handled += size!($T);
                     let _offset = $case_addr&!mask | addr&!mask;
                     result |= foo!(from: $T, to: $io_type, $getter(self), _offset);
                 }
             })+
 
-            if !handled {
+            if bytes_handled < size!($io_type) {
                 panic!("Unhandled ioread{} at 0x0400_0{:03x}", 8*size!($io_type), addr);
             }
 
@@ -145,13 +145,14 @@ macro_rules! write_io_method {
     ($fn_name:ident, $io_type:ident, $($T:ident, $case_addr:expr, $setter:expr,)+) => {
         fn $fn_name(&mut self, addr: u32, value: $io_type) {
             use std::cmp;
-            let mut handled = false;
+            let mut bytes_handled = 0;
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
                 let mask: u32 = !(type_size - 1);
                 if (addr & mask) == ($case_addr & mask) {
-                    handled = true;
+                    println!("Adding {}", size!($T));
+                    bytes_handled += size!($T);
                     let _offset = ($case_addr&!mask | addr&!mask) as $T;
                     let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
                     let whole = read_cache!(self.write_cache, $T, addr);
@@ -167,7 +168,7 @@ macro_rules! write_io_method {
                 }
             })+
 
-            if !handled {
+            if bytes_handled < size!($io_type) {
                 panic!("Unhandled iowrite{} at 0x0400_0{:03x} of {:X}", 8*size!($io_type), addr, value);
             }
         }
