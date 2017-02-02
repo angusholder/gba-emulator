@@ -50,6 +50,7 @@ pub struct Interconnect {
 
     io_regs: IORegs,
     interrupt_enable: IrqFlags,
+    interrupt_req_ack: IrqFlags,
     lcd_control: LCDControl,
 
     write_cache: Buffer,
@@ -77,6 +78,7 @@ impl Interconnect {
 
             io_regs: IORegs::default(),
             interrupt_enable: Default::default(),
+            interrupt_req_ack: Default::default(),
             lcd_control: Default::default(),
 
             write_cache: Buffer::new(vec![0u8; 0x804].into_boxed_slice()),
@@ -187,7 +189,7 @@ impl Interconnect {
 
 impl_io_map! {
     [Interconnect]
-    (u16, 0x000) {
+    (u16, 0x000, lcd_control) {
         read => |ic: &Interconnect| {
             Into::<u16>::into(ic.lcd_control)
         },
@@ -197,7 +199,7 @@ impl_io_map! {
         }
     }
 
-    (u16, 0x200) {
+    (u16, 0x200, interrupt_enable) {
         read => |ic: &Interconnect| {
             Into::<u16>::into(ic.interrupt_enable)
         },
@@ -207,9 +209,31 @@ impl_io_map! {
         }
     }
 
-    (u16, 0x208) {
+    (u16, 0x202, interrupt_req_ack) {
         read => |ic: &Interconnect| {
-            ic.io_regs.master_interrupt_enable as u16
+            Into::<u16>::into(ic.interrupt_req_ack)
+        },
+        write => |ic: &mut Interconnect, value: u16| {
+            let cur: u16 = ic.interrupt_req_ack.into();
+            let new_state = cur & !value;
+            ic.interrupt_req_ack = new_state.into();
+            println!("Setting interrupt_req_ack = {:?}", ic.interrupt_req_ack);
+        }
+    }
+
+    (u32, 0x204, wait_control) {
+        read => |_ic: &Interconnect| {
+            0
+        },
+        write => |_ic: &mut Interconnect, value: u32| {
+            println!("Setting wait_control = {:?}", value);
+            assert!(value == 0);
+        }
+    }
+
+    (u32, 0x208, master_interrupt_enable) {
+        read => |ic: &Interconnect| {
+            ic.io_regs.master_interrupt_enable as u32
         },
         write => |ic: &mut Interconnect, value| {
             println!("Setting master_interrupt_enable = {}", ic.io_regs.master_interrupt_enable);
@@ -217,7 +241,7 @@ impl_io_map! {
         }
     }
 
-    (u8, 0x300) {
+    (u8, 0x300, post_boot_flag) {
         read => |ic: &Interconnect| {
             ic.io_regs.post_boot_flag as u8
         },
