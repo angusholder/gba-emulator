@@ -8,15 +8,13 @@ fn set_zn(arm: &mut Arm7TDMI, value: u32) {
 
 #[inline(always)]
 fn add_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
-    arm.cpsr.v = (!(a ^ b) ^ r) >> 31 != 0;
-    // arm.cpsr.v = ((a & b & !r) | (!a & !b & r)) >> 31 != 0;
+    arm.cpsr.v = ((a & b & !r) | (!a & !b & r)) >> 31 != 0;
     arm.cpsr.c = ((a & b) | (a & !r) | (b & !r)) >> 31 != 0;
 }
 
 #[inline(always)]
 fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
-    arm.cpsr.v = (a ^ !(b ^ r)) >> 31 != 0;
-    // arm.cpsr.v = ((a & !b & !r) | (!a & b & r)) >> 31 != 0;
+    arm.cpsr.v = ((a & !b & !r) | (!a & b & r)) >> 31 != 0;
     arm.cpsr.c = ((a & !b) | (a & !r) | (!b & !r)) >> 31 != 0;
 }
 
@@ -583,11 +581,19 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             assert!(reglist != 0);
             assert!(rn_index != REG_PC);
 
-            let offset = if up {4} else {!4 + 1};
-            let mut ptr = arm.regs[rn_index];
+            const WIDTH: u32 = 4;
+            let rn = arm.regs[rn_index];
+            let span = WIDTH * reglist.count_ones();
+
+            let (mut ptr, writeback_value) = match (up, preindex) {
+                (true,  true ) => (rn + WIDTH, rn + span),
+                (true,  false) => (rn, rn + span),
+                (false, true ) => (rn - span, rn - span),
+                (false, false) => (rn - span + WIDTH,rn - span),
+            };
 
             if preindex {
-                ptr = ptr.wrapping_add(offset);
+                ptr = ptr.wrapping_add(WIDTH);
             }
 
             if set_cc {
@@ -610,14 +616,13 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         arm.regs[i] = arm.mem.read32(ptr);
-                        ptr = ptr.wrapping_add(offset);
+                        ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
 
                 if reglist & (1 << REG_PC) != 0 {
                     let target = arm.mem.read32(ptr);
                     arm.branch_to(target);
-                    ptr = ptr.wrapping_add(offset);
 
                     if set_cc {
                         arm.cpsr = arm.get_spsr();
@@ -646,7 +651,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         arm.mem.write32(ptr, arm.regs[i]);
-                        ptr = ptr.wrapping_add(offset);
+                        ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
 
@@ -665,7 +670,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             }
 
             if writeback {
-                arm.regs[rn_index] = ptr;
+                arm.regs[rn_index] = writeback_value;
             }
         }
 

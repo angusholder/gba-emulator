@@ -9,15 +9,13 @@ fn set_zn(arm: &mut Arm7TDMI, value: u32) {
 
 #[inline(always)]
 fn add_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
-    arm.cpsr.v = (!(a ^ b) ^ r) >> 31 != 0;
-    // arm.cpsr.v = ((a & b & !r) | (!a & !b & r)) >> 31 != 0;
+    arm.cpsr.v = ((a & b & !r) | (!a & !b & r)) >> 31 != 0;
     arm.cpsr.c = ((a & b) | (a & !r) | (b & !r)) >> 31 != 0;
 }
 
 #[inline(always)]
 fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
-    arm.cpsr.v = (a ^ !(b ^ r)) >> 31 != 0;
-    // arm.cpsr.v = ((a & !b & !r) | (!a & b & r)) >> 31 != 0;
+    arm.cpsr.v = ((a & !b & !r) | (!a & b & r)) >> 31 != 0;
     arm.cpsr.c = ((a & !b) | (a & !r) | (!b & !r)) >> 31 != 0;
 }
 
