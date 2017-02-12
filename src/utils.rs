@@ -133,7 +133,7 @@ macro_rules! read_io_method {
             })+
 
             if bytes_handled < size!($io_type) {
-                panic!("Unhandled ioread{} at 0x0400_0{:03x}", 8*size!($io_type), addr);
+                println!("WARNING: Unhandled ioread{} at 0x0400_0{:03X}", 8*size!($io_type), addr);
             }
 
             result
@@ -151,7 +151,6 @@ macro_rules! write_io_method {
                 let type_size = cmp::max(size!($T), size!($io_type));
                 let mask: u32 = !(type_size - 1);
                 if (addr & mask) == ($case_addr & mask) {
-                    println!("Adding {}", size!($T));
                     bytes_handled += size!($T);
                     let _offset = ($case_addr&!mask | addr&!mask) as $T;
                     let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
@@ -169,7 +168,7 @@ macro_rules! write_io_method {
             })+
 
             if bytes_handled < size!($io_type) {
-                panic!("Unhandled iowrite{} at 0x0400_0{:03x} of {:X}", 8*size!($io_type), addr, value);
+                println!("WARNING: Unhandled iowrite{} at 0x0400_0{:03X} of {:X}", 8*size!($io_type), addr, value);
             }
         }
     }
@@ -178,7 +177,7 @@ macro_rules! write_io_method {
 macro_rules! impl_io_map {
     (
         [$struct_type:ty]
-        $(($T:ident, $case_addr:expr) {
+        $(($T:ident, $case_addr:expr, $debug_name:ident) {
             read => $getter:expr,
             write => $setter:expr
         })+
