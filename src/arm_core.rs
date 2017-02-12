@@ -1,4 +1,5 @@
 use arm7tdmi::*;
+use interconnect::Interconnect;
 
 #[inline(always)]
 fn set_zn(arm: &mut Arm7TDMI, value: u32) {
@@ -106,7 +107,7 @@ fn barrel_shift(arm: &mut Arm7TDMI, operand: u32) -> (u32, bool) {
     }
 }
 
-pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
+pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
     debug_assert!(arm.regs[REG_PC] & 3 == 0);
 
     macro_rules! invalid {
@@ -253,7 +254,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                         }
                         0b101111 => { // BX
                             let rn = arm.regs[(op & 0xF) as usize];
-                            arm.branch_exchange(rn);
+                            arm.branch_exchange(interconnect, rn);
                         }
 
                         _ => invalid!(op),
@@ -323,7 +324,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                     // arm.cpsr = arm.get_spsr();
                 } else {
                     let target = arm.regs[REG_PC];
-                    arm.branch_to(target);
+                    arm.branch_to(interconnect, target);
                 }
             }
         }
@@ -451,10 +452,10 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             };
 
             match (load, byte) {
-                (false, false) => arm.mem.write32(addr, arm.regs[rd_index]),
-                (false, true ) => arm.mem.write8(addr, arm.regs[rd_index] as u8),
-                (true , false) => arm.regs[rd_index] = arm.mem.read32(addr),
-                (true , true ) => arm.regs[rd_index] = arm.mem.read8(addr) as u32,
+                (false, false) => interconnect.write32(addr, arm.regs[rd_index]),
+                (false, true ) => interconnect.write8(addr, arm.regs[rd_index] as u8),
+                (true , false) => arm.regs[rd_index] = interconnect.read32(addr),
+                (true , true ) => arm.regs[rd_index] = interconnect.read8(addr) as u32,
             }
 
             if preindex {
@@ -506,22 +507,22 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             match (load, op >> 5 & 3) {
                 // LDH
                 (true, 0b01) => {
-                    arm.regs[rd_index] = arm.mem.read16(addr) as u32;
+                    arm.regs[rd_index] = interconnect.read16(addr) as u32;
                 }
 
                 // LDSB
                 (true, 0b10) => {
-                    arm.regs[rd_index] = arm.mem.read8(addr) as i8 as i32 as u32;
+                    arm.regs[rd_index] = interconnect.read8(addr) as i8 as i32 as u32;
                 }
 
                 // LDSH
                 (true, 0b11) => {
-                    arm.regs[rd_index] = arm.mem.read16(addr) as i16 as i32 as u32;
+                    arm.regs[rd_index] = interconnect.read16(addr) as i16 as i32 as u32;
                 }
 
                 // STH
                 (false, 0b01) => {
-                    arm.mem.write16(addr, arm.regs[rd_index] as u16);
+                    interconnect.write16(addr, arm.regs[rd_index] as u16);
                 }
 
                 // Signed stores aren't valid operations
@@ -555,13 +556,13 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
             let rm = arm.regs[rm_index];
 
             if byte {
-                let old = arm.mem.read8(rn) as u32;
+                let old = interconnect.read8(rn) as u32;
                 arm.regs[rd_index] = old;
-                arm.mem.write8(rn, rm as u8);
+                interconnect.write8(rn, rm as u8);
             } else {
-                let old = arm.mem.read32(rn);
+                let old = interconnect.read32(rn);
                 arm.regs[rd_index] = old;
-                arm.mem.write32(rn, rm);
+                interconnect.write32(rn, rm);
             }
         }
 
@@ -617,14 +618,14 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 // special handling here, as we do writeback last.
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
-                        arm.regs[i] = arm.mem.read32(ptr);
+                        arm.regs[i] = interconnect.read32(ptr);
                         ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
 
                 if reglist & (1 << REG_PC) != 0 {
-                    let target = arm.mem.read32(ptr);
-                    arm.branch_to(target);
+                    let target = interconnect.read32(ptr);
+                    arm.branch_to(interconnect, target);
 
                     if set_cc {
                         arm.cpsr = arm.get_spsr();
@@ -652,7 +653,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
 
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
-                        arm.mem.write32(ptr, arm.regs[i]);
+                        interconnect.write32(ptr, arm.regs[i]);
                         ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
@@ -660,7 +661,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 if reglist & (1 << REG_PC) != 0 {
                     // "Whenever R15 is stored to memory the stored value is
                     //  the address of the STM instruction plus 12."
-                    arm.mem.write32(ptr, arm.regs[REG_PC] + 4);
+                    interconnect.write32(ptr, arm.regs[REG_PC] + 4);
                 }
             }
 
@@ -694,7 +695,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
                 arm.regs[REG_LR] = pc - 4;
             }
 
-            arm.branch_to(addr);
+            arm.branch_to(interconnect, addr);
         }
 
         // // Coprocessor operations
@@ -705,7 +706,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
         0xF00 ... 0xFFF => { // Software Interrupt
             // GBA only uses most significant 8 bits of comment field, matching
             // the thumb version of the instruction.
-            arm.signal_swi();
+            arm.signal_swi(interconnect);
         }
 
         _ => invalid!(op),

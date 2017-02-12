@@ -206,8 +206,6 @@ pub struct Arm7TDMI {
     pub cpsr: StatusRegister,
     pub regs: [u32; 16],
 
-    pub mem: Interconnect,
-
     // Supervisor Mode:
     svc_sp: u32,
     svc_lr: u32,
@@ -285,9 +283,8 @@ static SWI_FN_NAMES: [&'static str; 43] = [
 ];
 
 impl Arm7TDMI {
-    pub fn new(bios: Box<[u8]>) -> Arm7TDMI {
+    pub fn new() -> Arm7TDMI {
         let mut result = Arm7TDMI {
-            mem: Interconnect::new(bios),
             cpsr: Default::default(),
             regs: Default::default(),
 
@@ -394,24 +391,24 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn branch_to(&mut self, addr: u32) {
+    pub fn branch_to(&mut self, interconnect: &mut Interconnect, addr: u32) {
         let step = self.get_op_size();
         if self.cpsr.thumb_mode {
-            assert!(addr & 1 == 0);
-            self.mem.prefetch[0] = self.mem.exec16(addr) as u32;
-            self.mem.prefetch[1] = self.mem.exec16(addr + step) as u32;
+            debug_assert!(addr & 1 == 0);
+            interconnect.prefetch[0] = interconnect.exec16(addr) as u32;
+            interconnect.prefetch[1] = interconnect.exec16(addr + step) as u32;
             self.regs[REG_PC] = addr + step;
         } else {
-            assert!(addr & 3 == 0);
-            self.mem.prefetch[0] = self.mem.exec32(addr);
-            self.mem.prefetch[1] = self.mem.exec32(addr + step);
+            debug_assert!(addr & 3 == 0);
+            interconnect.prefetch[0] = interconnect.exec32(addr);
+            interconnect.prefetch[1] = interconnect.exec32(addr + step);
             self.regs[REG_PC] = addr + step;
         }
     }
 
-    pub fn branch_exchange(&mut self, addr: u32) {
+    pub fn branch_exchange(&mut self, interconnect: &mut Interconnect, addr: u32) {
         self.cpsr.thumb_mode = (addr & 1) != 0;
-        self.branch_to(addr & !1u32);
+        self.branch_to(interconnect, addr & !1u32);
     }
 
     pub fn get_op_size(&self) -> u32 {
@@ -422,7 +419,7 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn signal_reset(&mut self) {
+    pub fn signal_reset(&mut self, interconnect: &mut Interconnect) {
         const INTVEC_RESET: u32 = 0x0;
 
         self.svc_lr = 0xDEADBEEF; // State is unpredictable on reset
@@ -430,30 +427,30 @@ impl Arm7TDMI {
         self.cpsr.fiq_disable = true;
         self.cpsr.irq_disable = true;
         self.cpsr.thumb_mode = false;
-        self.branch_to(INTVEC_RESET);
+        self.branch_to(interconnect, INTVEC_RESET);
     }
 
-    pub fn signal_undef(&mut self) {
+    pub fn signal_undef(&mut self, interconnect: &mut Interconnect) {
         const INTVEC_UNDEFINED: u32 = 0x4;
 
         self.und_spsr = self.cpsr;
         self.und_lr = self.regs[REG_PC] + self.get_op_size();
         self.switch_mode(OperatingMode::Undefined);
         self.cpsr.thumb_mode = false;
-        self.branch_to(INTVEC_UNDEFINED);
+        self.branch_to(interconnect, INTVEC_UNDEFINED);
     }
 
-    pub fn signal_swi(&mut self) {
+    pub fn signal_swi(&mut self, interconnect: &mut Interconnect) {
         const INTVEC_SWI: u32 = 0x8;
 
         self.svc_spsr = self.cpsr;
         self.svc_lr = self.regs[REG_PC] + self.get_op_size();
         self.switch_mode(OperatingMode::Supervisor);
         self.cpsr.thumb_mode = false;
-        self.branch_to(INTVEC_SWI);
+        self.branch_to(interconnect, INTVEC_SWI);
     }
 
-    pub fn signal_irq(&mut self) {
+    pub fn signal_irq(&mut self, interconnect: &mut Interconnect) {
         const INTVEC_IRQ: u32 = 0x18;
 
         if self.cpsr.irq_disable {
@@ -463,10 +460,10 @@ impl Arm7TDMI {
         self.irq_lr = self.regs[REG_PC] + 4;
         self.switch_mode(OperatingMode::Irq);
         self.cpsr.thumb_mode = false;
-        self.branch_to(INTVEC_IRQ);
+        self.branch_to(interconnect, INTVEC_IRQ);
     }
 
-    pub fn step(&mut self) -> StepResult {
+    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepResult {
         use thumb_core::step_thumb;
         use arm_core::step_arm;
 
@@ -474,21 +471,21 @@ impl Arm7TDMI {
         self.regs[REG_PC] += step;
 
         let result = StepResult {
-            op: self.mem.prefetch[0],
+            op: interconnect.prefetch[0],
             thumb_mode: self.cpsr.thumb_mode,
         };
 
-        self.mem.prefetch[0] = self.mem.prefetch[1];
-        self.mem.prefetch[1] = if self.cpsr.thumb_mode {
-            self.mem.exec16(self.regs[REG_PC]) as u32
+        interconnect.prefetch[0] = interconnect.prefetch[1];
+        interconnect.prefetch[1] = if self.cpsr.thumb_mode {
+            interconnect.exec16(self.regs[REG_PC]) as u32
         } else {
-            self.mem.exec32(self.regs[REG_PC])
+            interconnect.exec32(self.regs[REG_PC])
         };
 
         if self.cpsr.thumb_mode {
-            step_thumb(self, result.op as u16);
+            step_thumb(self, interconnect, result.op as u16);
         } else {
-            step_arm(self, result.op);
+            step_arm(self, interconnect, result.op);
         }
 
         result

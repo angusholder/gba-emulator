@@ -1,5 +1,4 @@
 use std::fmt::Write;
-use interconnect::Interconnect;
 use arm7tdmi::{ REG_PC, REG_LR };
 
 static CC_NAMES: [&'static str; 15] = [
@@ -450,22 +449,20 @@ pub fn disassemble_arm_opcode(op: u32, pc: u32) -> String {
 
 #[test]
 fn data_processing() {
-    assert_eq!(disassemble_arm_opcode(0xE0110002), "ANDS R0, R1, R2");
-    assert_eq!(disassemble_arm_opcode(0x022C900F), "EOREQ R9, R12, #15");
-    assert_eq!(disassemble_arm_opcode(0xC255BC0F), "SUBGTS R11, R5, #3840"); // 0xFF ROR 24 (half the shift)
-    assert_eq!(disassemble_arm_opcode(0x3087320D), "ADDCC R3, R7, R13 LSL #4");
-    assert_eq!(disassemble_arm_opcode(0x51865C5A), "ORRPL R5, R6, R10 ASR R12");
-    assert_eq!(disassemble_arm_opcode(0xE1E01001), "MVN R1, R1");
-    assert_eq!(disassemble_arm_opcode(0xE1030424), "TST R3, R4 LSR #8");
+    assert_eq!(disassemble_arm_opcode(0xE0110002, 0), "ANDS R0, R1, R2");
+    assert_eq!(disassemble_arm_opcode(0x022C900F, 0), "EOREQ R9, R12, #15");
+    assert_eq!(disassemble_arm_opcode(0xC255BC0F, 0), "SUBGTS R11, R5, #3840"); // 0xFF ROR 24 (half the shift)
+    assert_eq!(disassemble_arm_opcode(0x3087320D, 0), "ADDCC R3, R7, R13 LSL #4");
+    assert_eq!(disassemble_arm_opcode(0x51865C5A, 0), "ORRPL R5, R6, R10 ASR R12");
+    assert_eq!(disassemble_arm_opcode(0xE1E01001, 0), "MVN R1, R1");
+    assert_eq!(disassemble_arm_opcode(0xE1030424, 0), "TST R3, R4 LSR #8");
 }
 
-pub fn disassemble_thumb_opcode(memory: &Interconnect, pc: u32) -> String {
+pub fn disassemble_thumb_opcode(op: u32, pc: u32) -> String {
     static ALU_OP_NAMES: [&'static str; 16] = [
         "AND", "EOR", "LSL", "LSR", "ASR", "ADC", "SBC", "ROR",
         "TST", "NEG", "CMP", "CMN", "ORR", "MUL", "BIC", "MVN",
     ];
-
-    let op = memory.exec16(pc) as u32;
 
     match op >> 8 {
         0x00 ... 0x07 => format!("LSL R{}, R{}, #{}", op & 7, op >> 3 & 7, op >> 6 & 31),

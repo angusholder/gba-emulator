@@ -1,5 +1,7 @@
-use arm7tdmi::*;
 use std::mem;
+
+use arm7tdmi::*;
+use interconnect::Interconnect;
 
 #[inline(always)]
 fn set_zn(arm: &mut Arm7TDMI, value: u32) {
@@ -20,38 +22,38 @@ fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
 }
 
 macro_rules! load_op_reg_offset {
-    ($arm:expr, $op:expr, $T:ty, $load_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
-        $arm.regs[($op & 7) as usize] = ($arm.mem.$load_fn(addr) as $T) as u32;
+        $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
     }
 }
 
 macro_rules! store_op_reg_offset {
-    ($arm:expr, $op:expr, $T:ty, $store_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
-        $arm.mem.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
+        $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
     }
 }
 
 macro_rules! load_op_immed_offset {
-    ($arm:expr, $op:expr, $T:ty, $load_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
-        $arm.regs[($op & 7) as usize] = ($arm.mem.$load_fn(addr) as $T) as u32;
+        $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
     }
 }
 
 macro_rules! store_op_immed_offset {
-    ($arm:expr, $op:expr, $T:ty, $store_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
-        $arm.mem.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
+        $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
     }
 }
 
@@ -66,7 +68,7 @@ fn sign_extend(n: u32, n_bits: usize) -> u32 {
     }
 }
 
-pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
+pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) {
     debug_assert!(arm.regs[REG_PC] & 1 == 0);
 
     // Make op 32-bit for convenience.
@@ -274,69 +276,69 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
         }
         0x47 => { // BX
             let rs = arm.regs[(op >> 3 & 0xF) as usize];
-            arm.branch_exchange(rs);
+            arm.branch_exchange(interconnect, rs);
         }
 
         0x48 ... 0x4F => { // LDR Rd, [PC, #imm8]
             let offset = (op & 0xFF) << 2;
             let addr = (arm.regs[REG_PC] & !2) + offset;
-            arm.regs[(op >> 8 & 7) as usize] = arm.mem.read32(addr);
+            arm.regs[(op >> 8 & 7) as usize] = interconnect.read32(addr);
         }
 
         0x50 | 0x51 => { // STR Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, op, u8, write8);
+            store_op_reg_offset!(arm, interconnect, op, u8, write8);
         }
         0x52 | 0x53 => { // STRH Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, op, u16, write16);
+            store_op_reg_offset!(arm, interconnect, op, u16, write16);
         }
         0x54 | 0x55 => { // STRB Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, op, u32, write32);
+            store_op_reg_offset!(arm, interconnect, op, u32, write32);
         }
         0x56 | 0x57 => { // LDSB Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, op, i8, read8);
+            load_op_reg_offset!(arm, interconnect, op, i8, read8);
         }
         0x58 | 0x59 => { // LDR Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, op, u32, read32);
+            load_op_reg_offset!(arm, interconnect, op, u32, read32);
         }
         0x5A | 0x5B => { // LDRH Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, op, u16, read16);
+            load_op_reg_offset!(arm, interconnect, op, u16, read16);
         }
         0x5C | 0x5D => { // LDRB Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, op, u8, read8);
+            load_op_reg_offset!(arm, interconnect, op, u8, read8);
         }
         0x5E | 0x5F => { // LDSH Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, op, i16, read16);
+            load_op_reg_offset!(arm, interconnect, op, i16, read16);
         }
 
         0x60 ... 0x67 => { // STR Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, op, u32, write32);
+            store_op_immed_offset!(arm, interconnect, op, u32, write32);
         }
         0x68 ... 0x6F => { // LDR Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, op, u32, read32);
+            load_op_immed_offset!(arm, interconnect, op, u32, read32);
         }
         0x70 ... 0x77 => { // STRB Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, op, u8, write8);
+            store_op_immed_offset!(arm, interconnect, op, u8, write8);
         }
         0x78 ... 0x7F => { // LDRB Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, op, u8, read8);
+            load_op_immed_offset!(arm, interconnect, op, u8, read8);
         }
         0x80 ... 0x87 => { // STRH Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, op, u16, write16);
+            store_op_immed_offset!(arm, interconnect, op, u16, write16);
         }
         0x88 ... 0x8F => { // LDRH Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, op, u16, read16);
+            load_op_immed_offset!(arm, interconnect, op, u16, read16);
         }
 
         0x90 ... 0x97 => { // STR Rd, [SP, #imm8]
             let rd = arm.regs[(op >> 8 & 7) as usize];
             let offset = (op & 0xFF) << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
-            arm.mem.write32(addr, rd);
+            interconnect.write32(addr, rd);
         }
         0x98 ... 0x9F => { // LDR Rd, [SP, #imm8]
             let offset = (op & 0xFF) << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
-            arm.regs[(op >> 8 & 7) as usize] = arm.mem.read32(addr);
+            arm.regs[(op >> 8 & 7) as usize] = interconnect.read32(addr);
         }
 
         0xA0 ... 0xA7 => { // ADD Rd, PC, #imm8
@@ -364,13 +366,13 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     sp -= 4;
-                    arm.mem.write32(sp, arm.regs[i]);
+                    interconnect.write32(sp, arm.regs[i]);
                 }
             }
 
             if store_lr {
                 sp -= 4;
-                arm.mem.write32(sp, arm.regs[REG_LR]);
+                interconnect.write32(sp, arm.regs[REG_LR]);
             }
 
             arm.regs[REG_SP] = sp;
@@ -381,15 +383,15 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
-                    arm.regs[i] = arm.mem.read32(sp);
+                    arm.regs[i] = interconnect.read32(sp);
                     sp += 4;
                 }
             }
 
             if load_pc {
-                let addr = arm.mem.read32(sp);
+                let addr = interconnect.read32(sp);
                 sp += 4;
-                arm.branch_to(addr);
+                arm.branch_to(interconnect, addr);
             }
 
             arm.regs[REG_SP] = sp;
@@ -401,7 +403,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
-                    arm.mem.write32(rb, arm.regs[i]);
+                    interconnect.write32(rb, arm.regs[i]);
                     rb += 4;
                 }
             }
@@ -414,7 +416,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
-                    arm.regs[i] = arm.mem.read32(rb);
+                    arm.regs[i] = interconnect.read32(rb);
                     rb += 4;
                 }
             }
@@ -427,20 +429,20 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
             let cond = ConditionCode::from((op >> 8 & 0xF) as u32);
             if arm.eval_condition_code(cond) {
                 let addr = arm.regs[REG_PC].wrapping_add(offset);
-                arm.branch_to(addr);
+                arm.branch_to(interconnect, addr);
             }
         }
 
         0xDE => unreachable!(), // B{ALWAYS} is undefined
 
         0xDF => { // SWI #value8
-            arm.signal_swi();
+            arm.signal_swi(interconnect);
         }
 
         0xE0 ... 0xE7 => { // B #SOffset12
             let offset = sign_extend(op & 0x7FF, 11) << 1;
             let addr = arm.regs[REG_PC].wrapping_add(offset);
-            arm.branch_to(addr);
+            arm.branch_to(interconnect, addr);
         }
 
         0xF0 ... 0xF7 => { // BL (high)
@@ -452,7 +454,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
             arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);
             let temp = arm.regs[REG_PC];
             let target = arm.regs[REG_LR];
-            arm.branch_to(target);
+            arm.branch_to(interconnect, target);
 
             // LR contains address of instruction following this,
             // and has bit0 set to force thumb mode upon return.
