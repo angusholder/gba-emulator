@@ -192,6 +192,11 @@ impl StatusRegister {
     }
 }
 
+pub struct StepResult {
+    pub op: u32,
+    pub thumb_mode: bool,
+}
+
 pub const REG_SP: usize = 13;
 pub const REG_LR: usize = 14;
 pub const REG_PC: usize = 15;
@@ -459,5 +464,33 @@ impl Arm7TDMI {
         self.switch_mode(OperatingMode::Irq);
         self.cpsr.thumb_mode = false;
         self.branch_to(INTVEC_IRQ);
+    }
+
+    pub fn step(&mut self) -> StepResult {
+        use thumb_core::step_thumb;
+        use arm_core::step_arm;
+
+        let step = self.get_op_size();
+        self.regs[REG_PC] += step;
+
+        let result = StepResult {
+            op: self.mem.prefetch[0],
+            thumb_mode: self.cpsr.thumb_mode,
+        };
+
+        self.mem.prefetch[0] = self.mem.prefetch[1];
+        self.mem.prefetch[1] = if self.cpsr.thumb_mode {
+            self.mem.exec16(self.regs[REG_PC]) as u32
+        } else {
+            self.mem.exec32(self.regs[REG_PC])
+        };
+
+        if self.cpsr.thumb_mode {
+            step_thumb(self, result.op as u16);
+        } else {
+            step_arm(self, result.op);
+        }
+
+        result
     }
 }

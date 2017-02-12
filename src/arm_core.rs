@@ -107,6 +107,8 @@ fn barrel_shift(arm: &mut Arm7TDMI, operand: u32) -> (u32, bool) {
 }
 
 pub fn step_arm(arm: &mut Arm7TDMI, op: u32) {
+    debug_assert!(arm.regs[REG_PC] & 3 == 0);
+
     macro_rules! invalid {
         ($op:expr) => {
             panic!("Unsupported operation 0x{:08X}", op);

@@ -67,6 +67,8 @@ fn sign_extend(n: u32, n_bits: usize) -> u32 {
 }
 
 pub fn step_thumb(arm: &mut Arm7TDMI, op: u16) {
+    debug_assert!(arm.regs[REG_PC] & 1 == 0);
+
     // Make op 32-bit for convenience.
     let op = op as u32;
 
