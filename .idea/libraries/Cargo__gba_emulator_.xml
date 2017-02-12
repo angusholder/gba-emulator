@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="Cargo &lt;gba-emulator&gt;">
+    <CLASSES>
+      <root url="file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/num-integer-0.1.32" />
+      <root url="file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/num-0.1.36" />
+      <root url="file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/num-iter-0.1.32" />
+      <root url="file://$USER_HOME$/.cargo/registry/src/github.com-1ecc6299db9ec823/num-traits-0.1.36" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
