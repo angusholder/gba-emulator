@@ -22,39 +22,59 @@ fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32, r: u32) {
 }
 
 macro_rules! load_op_reg_offset {
-    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {{
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
         $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
-    }
+        if $arm.watchpoints.contains(addr) {
+            StepEvent::TriggerWatchpoint(addr)
+        } else {
+            StepEvent::None
+        }
+    }}
 }
 
 macro_rules! store_op_reg_offset {
-    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {{
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
         $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
-    }
+        if $arm.watchpoints.contains(addr) {
+            StepEvent::TriggerWatchpoint(addr)
+        } else {
+            StepEvent::None
+        }
+    }}
 }
 
 macro_rules! load_op_immed_offset {
-    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $load_fn:ident) => {{
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
         $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
-    }
+        if $arm.watchpoints.contains(addr) {
+            StepEvent::TriggerWatchpoint(addr)
+        } else {
+            StepEvent::None
+        }
+    }}
 }
 
 macro_rules! store_op_immed_offset {
-    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {
+    ($arm:expr, $interconnect:expr, $op:expr, $T:ty, $store_fn:ident) => {{
         let rb = $arm.regs[($op >> 3 & 7) as usize];
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
         $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
-    }
+        if $arm.watchpoints.contains(addr) {
+            StepEvent::TriggerWatchpoint(addr)
+        } else {
+            StepEvent::None
+        }
+    }}
 }
 
 #[inline(always)]
@@ -68,11 +88,13 @@ fn sign_extend(n: u32, n_bits: usize) -> u32 {
     }
 }
 
-pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) {
+pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
     debug_assert!(arm.regs[REG_PC] & 1 == 0);
 
     // Make op 32-bit for convenience.
     let op = op as u32;
+
+    let mut event = StepEvent::None;
 
     match op >> 8 {
         0x00 ... 0x07 => { // LSL
@@ -216,7 +238,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
                 }
                 0b1000 => { // TST Rd, Rs
                     set_zn(arm, rd & rs);
-                    return;
+                    return event;
                 }
                 0b1001 => { // NEG Rd, Rs
                     result = -(rs as i32) as u32;
@@ -227,13 +249,13 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
                     result = rd - rs;
                     set_zn(arm, result);
                     sub_set_vc(arm, rd, rs, result);
-                    return;
+                    return event;
                 }
                 0b1011 => { // CMN Rd, Rs
                     result = rs.wrapping_add(rd);
                     set_zn(arm, result);
                     add_set_vc(arm, rd, rs, result);
-                    return;
+                    return event;
                 }
                 0b1100 => { // ORR Rd, Rs
                     result = rd | rs;
@@ -286,47 +308,47 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
         }
 
         0x50 | 0x51 => { // STR Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, interconnect, op, u8, write8);
+            event = store_op_reg_offset!(arm, interconnect, op, u8, write8);
         }
         0x52 | 0x53 => { // STRH Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, interconnect, op, u16, write16);
+            event = store_op_reg_offset!(arm, interconnect, op, u16, write16);
         }
         0x54 | 0x55 => { // STRB Rd, [Rb, Ro]
-            store_op_reg_offset!(arm, interconnect, op, u32, write32);
+            event = store_op_reg_offset!(arm, interconnect, op, u32, write32);
         }
         0x56 | 0x57 => { // LDSB Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, interconnect, op, i8, read8);
+            event = load_op_reg_offset!(arm, interconnect, op, i8, read8);
         }
         0x58 | 0x59 => { // LDR Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, interconnect, op, u32, read32);
+            event = load_op_reg_offset!(arm, interconnect, op, u32, read32);
         }
         0x5A | 0x5B => { // LDRH Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, interconnect, op, u16, read16);
+            event = load_op_reg_offset!(arm, interconnect, op, u16, read16);
         }
         0x5C | 0x5D => { // LDRB Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, interconnect, op, u8, read8);
+            event = load_op_reg_offset!(arm, interconnect, op, u8, read8);
         }
         0x5E | 0x5F => { // LDSH Rd, [Rb, Ro]
-            load_op_reg_offset!(arm, interconnect, op, i16, read16);
+            event = load_op_reg_offset!(arm, interconnect, op, i16, read16);
         }
 
         0x60 ... 0x67 => { // STR Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, interconnect, op, u32, write32);
+            event = store_op_immed_offset!(arm, interconnect, op, u32, write32);
         }
         0x68 ... 0x6F => { // LDR Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, interconnect, op, u32, read32);
+            event = load_op_immed_offset!(arm, interconnect, op, u32, read32);
         }
         0x70 ... 0x77 => { // STRB Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, interconnect, op, u8, write8);
+            event = store_op_immed_offset!(arm, interconnect, op, u8, write8);
         }
         0x78 ... 0x7F => { // LDRB Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, interconnect, op, u8, read8);
+            event = load_op_immed_offset!(arm, interconnect, op, u8, read8);
         }
         0x80 ... 0x87 => { // STRH Rd, [RB, #imm5]
-            store_op_immed_offset!(arm, interconnect, op, u16, write16);
+            event = store_op_immed_offset!(arm, interconnect, op, u16, write16);
         }
         0x88 ... 0x8F => { // LDRH Rd, [RB, #imm5]
-            load_op_immed_offset!(arm, interconnect, op, u16, read16);
+            event = load_op_immed_offset!(arm, interconnect, op, u16, read16);
         }
 
         0x90 ... 0x97 => { // STR Rd, [SP, #imm8]
@@ -367,12 +389,18 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
                 if op & (1 << i) != 0 {
                     sp -= 4;
                     interconnect.write32(sp, arm.regs[i]);
+                    if arm.watchpoints.contains(sp) {
+                        event = StepEvent::TriggerWatchpoint(sp);
+                    }
                 }
             }
 
             if store_lr {
                 sp -= 4;
                 interconnect.write32(sp, arm.regs[REG_LR]);
+                if arm.watchpoints.contains(sp) {
+                    event = StepEvent::TriggerWatchpoint(sp);
+                }
             }
 
             arm.regs[REG_SP] = sp;
@@ -384,12 +412,18 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     arm.regs[i] = interconnect.read32(sp);
+                    if arm.watchpoints.contains(sp) {
+                        event = StepEvent::TriggerWatchpoint(sp);
+                    }
                     sp += 4;
                 }
             }
 
             if load_pc {
                 let addr = interconnect.read32(sp);
+                if arm.watchpoints.contains(sp) {
+                    event = StepEvent::TriggerWatchpoint(sp);
+                }
                 sp += 4;
                 arm.branch_to(interconnect, addr);
             }
@@ -404,6 +438,9 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     interconnect.write32(rb, arm.regs[i]);
+                    if arm.watchpoints.contains(rb) {
+                        event = StepEvent::TriggerWatchpoint(rb);
+                    }
                     rb += 4;
                 }
             }
@@ -417,6 +454,9 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     arm.regs[i] = interconnect.read32(rb);
+                    if arm.watchpoints.contains(rb) {
+                        event = StepEvent::TriggerWatchpoint(rb);
+                    }
                     rb += 4;
                 }
             }
@@ -463,4 +503,6 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
 
         _ => unreachable!(),
     }
+
+    event
 }

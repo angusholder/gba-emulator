@@ -1,5 +1,6 @@
 use std::fmt;
-use interconnect::Interconnect;
+use interconnect::{ PrefetchValue, Interconnect };
+use utils::OrderedSet;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ConditionCode {
@@ -169,7 +170,7 @@ impl Default for StatusRegister {
 }
 
 impl fmt::Display for StatusRegister {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({n}{z}{c}{v}{t}{irq}{fiq}, {mode:?})",
             n = if self.n {"n"} else {"-"},
             z = if self.z {"z"} else {"-"},
@@ -192,19 +193,27 @@ impl StatusRegister {
     }
 }
 
-pub struct StepResult {
+pub enum StepEvent {
+    None,
+    TriggerBreakpoint(u32),
+    TriggerWatchpoint(u32),
+}
+
+pub struct StepInfo {
     pub op: u32,
+    pub op_addr: u32,
     pub thumb_mode: bool,
+    pub event: StepEvent,
 }
 
 pub const REG_SP: usize = 13;
 pub const REG_LR: usize = 14;
 pub const REG_PC: usize = 15;
 
+#[derive(Clone)]
 pub struct Arm7TDMI {
-    // System & User Mode:
-    pub cpsr: StatusRegister,
     pub regs: [u32; 16],
+    pub cpsr: StatusRegister,
 
     // Supervisor Mode:
     svc_sp: u32,
@@ -220,17 +229,21 @@ pub struct Arm7TDMI {
     und_sp: u32,
     und_lr: u32,
     und_spsr: StatusRegister,
+
+    // For use by the debugger
+    breakpoints: OrderedSet<u32>,
+    watchpoints: OrderedSet<u32>,
 }
 
 impl fmt::Debug for Arm7TDMI {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         static ARM_REGS: [&'static str; 16] = [
             "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
             "R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"
         ];
 
         for (i, r) in self.regs.iter().enumerate() {
-            try!(write!(f, "{}:{:08X} ", ARM_REGS[i], r));
+            write!(f, "{}:{:08X} ", ARM_REGS[i], r)?;
         }
         write!(f, "CPSR:{}\n\n", self.cpsr)
     }
@@ -300,6 +313,9 @@ impl Arm7TDMI {
             svc_spsr: Default::default(),
             irq_spsr: Default::default(),
             und_spsr: Default::default(),
+
+            breakpoints: OrderedSet::new(),
+            watchpoints: OrderedSet::new(),
         };
 
         result.regs[REG_SP] = 0x03007F00;
@@ -395,13 +411,25 @@ impl Arm7TDMI {
         let step = self.get_op_size();
         if self.cpsr.thumb_mode {
             debug_assert!(addr & 1 == 0);
-            interconnect.prefetch[0] = interconnect.exec16(addr) as u32;
-            interconnect.prefetch[1] = interconnect.exec16(addr + step) as u32;
+            interconnect.prefetch[0] = PrefetchValue {
+                op: interconnect.exec16(addr) as u32,
+                addr: addr,
+            };
+            interconnect.prefetch[1] = PrefetchValue {
+                op: interconnect.exec16(addr + step) as u32,
+                addr: addr + step,
+            };
             self.regs[REG_PC] = addr + step;
         } else {
             debug_assert!(addr & 3 == 0);
-            interconnect.prefetch[0] = interconnect.exec32(addr);
-            interconnect.prefetch[1] = interconnect.exec32(addr + step);
+            interconnect.prefetch[0] = PrefetchValue {
+                op: interconnect.exec32(addr),
+                addr: addr,
+            };
+            interconnect.prefetch[1] = PrefetchValue {
+                op: interconnect.exec32(addr + step),
+                addr: addr + step,
+            };
             self.regs[REG_PC] = addr + step;
         }
     }
@@ -463,31 +491,65 @@ impl Arm7TDMI {
         self.branch_to(interconnect, INTVEC_IRQ);
     }
 
-    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepResult {
+    pub fn add_breakpoint(&mut self, addr: u32) -> bool {
+        self.breakpoints.insert(addr)
+    }
+
+    pub fn remove_breakpoint(&mut self, addr: u32) -> bool {
+        self.breakpoints.remove(addr)
+    }
+
+    pub fn add_watchpoint(&mut self, addr: u32) -> bool {
+        self.watchpoints.insert(addr)
+    }
+
+    pub fn remove_watchpoint(&mut self, addr: u32) -> bool {
+        self.watchpoints.remove(addr)
+    }
+
+    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepInfo {
         use thumb_core::step_thumb;
         use arm_core::step_arm;
+
+        let PrefetchValue { op, addr } = interconnect.prefetch[0];
+
+        let last_thumb_mode = self.cpsr.thumb_mode;
+
+        if self.breakpoints.contains(addr) {
+            return StepInfo {
+                op: op,
+                op_addr: addr,
+                thumb_mode: last_thumb_mode,
+                event: StepEvent::TriggerBreakpoint(addr)
+            };
+        }
 
         let step = self.get_op_size();
         self.regs[REG_PC] += step;
 
-        let result = StepResult {
-            op: interconnect.prefetch[0],
-            thumb_mode: self.cpsr.thumb_mode,
-        };
-
         interconnect.prefetch[0] = interconnect.prefetch[1];
-        interconnect.prefetch[1] = if self.cpsr.thumb_mode {
+        let next_op = if self.cpsr.thumb_mode {
             interconnect.exec16(self.regs[REG_PC]) as u32
         } else {
             interconnect.exec32(self.regs[REG_PC])
         };
 
-        if self.cpsr.thumb_mode {
-            step_thumb(self, interconnect, result.op as u16);
-        } else {
-            step_arm(self, interconnect, result.op);
-        }
+        interconnect.prefetch[1] = PrefetchValue {
+            op: next_op,
+            addr: self.regs[REG_PC],
+        };
 
-        result
+        let event = if self.cpsr.thumb_mode {
+            step_thumb(self, interconnect, op as u16)
+        } else {
+            step_arm(self, interconnect, op)
+        };
+
+        StepInfo {
+            op: op,
+            op_addr: addr,
+            thumb_mode: last_thumb_mode,
+            event: event
+        }
     }
 }

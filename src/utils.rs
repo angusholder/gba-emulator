@@ -1,3 +1,6 @@
+use std::cmp::Ord;
+use std::ops::Deref;
+
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
     (u16,   $n:expr) => { $n as u16 };
@@ -329,5 +332,48 @@ impl Buffer {
         assert!(index & 3 == 0);
         check_bounds!(self.buffer, index + 3);
         unsafe { *(self.buffer.as_ptr().offset(index as isize) as * mut u32) = value; }
+    }
+}
+
+#[derive(Clone)]
+pub struct OrderedSet<T> {
+    vec: Vec<T>,
+}
+
+impl<T: Ord + Copy> OrderedSet<T> {
+    pub fn new() -> OrderedSet<T> {
+        OrderedSet {
+            vec: Vec::new()
+        }
+    }
+
+    pub fn insert(&mut self, item: T) -> bool {
+        if let Err(idx) = self.vec.binary_search(&item) {
+            self.vec.insert(idx, item);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn contains(&self, item: T) -> bool {
+        self.vec.binary_search(&item).is_ok()
+    }
+
+    pub fn remove(&mut self, item: T) -> bool {
+        if let Ok(idx) = self.vec.binary_search(&item) {
+            self.vec.remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<T> Deref for OrderedSet<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        &self.vec[..]
     }
 }

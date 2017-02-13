@@ -31,12 +31,28 @@ macro_rules! unhandled_write {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct PrefetchValue {
+    pub op: u32,
+    pub addr: u32,
+}
+
+impl Default for PrefetchValue {
+    fn default() -> PrefetchValue {
+        PrefetchValue {
+            op: 0xDEADBEEF,
+            addr: 0xDEADBEEF,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Interconnect {
     system_rom: Buffer,
     ewram: Buffer,
     iwram: Buffer,
     vram: Buffer,
-    pub prefetch: [u32; 2],
+    pub prefetch: [PrefetchValue; 2],
 
     sram_wait_control: usize,
     wait_state_0_non_seq: usize,
@@ -64,7 +80,7 @@ impl Interconnect {
             ewram: Buffer::with_capacity(EWRAM_SIZE),
             iwram: Buffer::with_capacity(IWRAM_SIZE),
             vram: Buffer::with_capacity(VRAM_SIZE),
-            prefetch: [0, 0],
+            prefetch: Default::default(),
 
             sram_wait_control: 0,
             wait_state_0_non_seq: 0,

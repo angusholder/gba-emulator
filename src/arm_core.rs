@@ -107,7 +107,7 @@ fn barrel_shift(arm: &mut Arm7TDMI, operand: u32) -> (u32, bool) {
     }
 }
 
-pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
+pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
     debug_assert!(arm.regs[REG_PC] & 3 == 0);
 
     macro_rules! invalid {
@@ -116,9 +116,11 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
         }
     }
 
+    let mut event = StepEvent::None;
+
     let cond = ConditionCode::from(op >> 28);
     if !arm.eval_condition_code(cond) {
-        return;
+        return event;
     }
 
     let mask = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
@@ -134,7 +136,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
 
             // Only one of the flag set without set_cc modes uses operand2
             let calculate_operand2 = (opcode & 0b1100) != 0b1000 || set_cc || (op >> 16 & 0x3F) == 0b101000;
-            let (operand2, carry) = if calculate_operand2 {
+            let (operand2, barrel_shifter_carry) = if calculate_operand2 {
                 if (op & 0x0200_0000) != 0 { // Operand = immediate rotated right by immediate
                     let imm = (op & 0xFF) as u32;
                     let rotate = (op >> 8 & 0xF) as u32;
@@ -147,10 +149,6 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
             } else {
                 (0u32, false) // Dummy value, unused.
             };
-
-            if set_cc {
-                arm.cpsr.c = carry;
-            }
 
             let result = match opcode {
                 0b0000 => { // AND
@@ -180,24 +178,26 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                 0b1000 if set_cc => { // TST
                     let result = rn & operand2;
                     set_zn(arm, result);
-                    return;
+                    arm.cpsr.c = barrel_shifter_carry;
+                    return event;
                 }
                 0b1001 if set_cc => { // TEQ
                     let result = rn ^ operand2;
                     set_zn(arm, result);
-                    return;
+                    arm.cpsr.c = barrel_shifter_carry;
+                    return event;
                 }
                 0b1010 if set_cc => { // CMP
                     let result = rn.wrapping_sub(operand2);
                     set_zn(arm, result);
                     sub_set_vc(arm, rn, operand2, result);
-                    return;
+                    return event;
                 }
                 0b1011 if set_cc => { // CMN
                     let result = rn.wrapping_add(operand2);
                     set_zn(arm, result);
                     add_set_vc(arm, rn, operand2, result);
-                    return;
+                    return event;
                 }
                 0b1100 => { // ORR
                     rn | operand2
@@ -260,7 +260,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                         _ => invalid!(op),
                     }
 
-                    return;
+                    return event;
                 }
 
                 _ => unreachable!()
@@ -276,6 +276,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                     0b1110 | // BIC
                     0b1111 => { // MVN
                         set_zn(arm, result);
+                        arm.cpsr.c = barrel_shifter_carry;
                     }
 
                     0b0100 => { // ADD
@@ -442,7 +443,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
 
             if !up {
                 // Make negative
-                offset = !offset + 1;
+                offset = -(offset as i32) as u32
             }
 
             let addr = if preindex {
@@ -451,11 +452,27 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                 rn
             };
 
+            if arm.watchpoints.contains(addr) {
+                event = StepEvent::TriggerWatchpoint(addr);
+            }
+
             match (load, byte) {
-                (false, false) => interconnect.write32(addr, arm.regs[rd_index]),
-                (false, true ) => interconnect.write8(addr, arm.regs[rd_index] as u8),
-                (true , false) => arm.regs[rd_index] = interconnect.read32(addr),
-                (true , true ) => arm.regs[rd_index] = interconnect.read8(addr) as u32,
+                (false, false) => {
+                    // STR
+                    interconnect.write32(addr, arm.regs[rd_index]);
+                }
+                (false, true ) => {
+                    // STRB
+                    interconnect.write8(addr, arm.regs[rd_index] as u8);
+                }
+                (true , false) => {
+                    // LDR
+                    arm.regs[rd_index] = interconnect.read32(addr);
+                }
+                (true , true ) => {
+                    // LDRB
+                    arm.regs[rd_index] = interconnect.read8(addr) as u32;
+                }
             }
 
             if preindex {
@@ -504,24 +521,25 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                 rn
             };
 
+            if arm.watchpoints.contains(addr) {
+                event = StepEvent::TriggerWatchpoint(addr);
+            }
+
             match (load, op >> 5 & 3) {
-                // LDH
                 (true, 0b01) => {
+                    // LDH
                     arm.regs[rd_index] = interconnect.read16(addr) as u32;
                 }
-
-                // LDSB
                 (true, 0b10) => {
+                    // LDSB
                     arm.regs[rd_index] = interconnect.read8(addr) as i8 as i32 as u32;
                 }
-
-                // LDSH
                 (true, 0b11) => {
+                    // LDSH
                     arm.regs[rd_index] = interconnect.read16(addr) as i16 as i32 as u32;
                 }
-
-                // STH
                 (false, 0b01) => {
+                    // STH
                     interconnect.write16(addr, arm.regs[rd_index] as u16);
                 }
 
@@ -552,17 +570,21 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
             assert!(rd_index != REG_PC);
             assert!(rn_index != REG_PC);
 
-            let rn = arm.regs[rn_index];
+            let addr = arm.regs[rn_index];
             let rm = arm.regs[rm_index];
 
+            if arm.watchpoints.contains(addr) {
+                event = StepEvent::TriggerWatchpoint(addr);
+            }
+
             if byte {
-                let old = interconnect.read8(rn) as u32;
+                let old = interconnect.read8(addr) as u32;
                 arm.regs[rd_index] = old;
-                interconnect.write8(rn, rm as u8);
+                interconnect.write8(addr, rm as u8);
             } else {
-                let old = interconnect.read32(rn);
+                let old = interconnect.read32(addr);
                 arm.regs[rd_index] = old;
-                interconnect.write32(rn, rm);
+                interconnect.write32(addr, rm);
             }
         }
 
@@ -619,12 +641,18 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         arm.regs[i] = interconnect.read32(ptr);
+                        if arm.watchpoints.contains(ptr) {
+                            event = StepEvent::TriggerWatchpoint(ptr);
+                        }
                         ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
 
                 if reglist & (1 << REG_PC) != 0 {
                     let target = interconnect.read32(ptr);
+                    if arm.watchpoints.contains(ptr) {
+                        event = StepEvent::TriggerWatchpoint(ptr);
+                    }
                     arm.branch_to(interconnect, target);
 
                     if set_cc {
@@ -654,6 +682,9 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         interconnect.write32(ptr, arm.regs[i]);
+                        if arm.watchpoints.contains(ptr) {
+                            event = StepEvent::TriggerWatchpoint(ptr);
+                        }
                         ptr = ptr.wrapping_add(WIDTH);
                     }
                 }
@@ -662,6 +693,9 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
                     // "Whenever R15 is stored to memory the stored value is
                     //  the address of the STM instruction plus 12."
                     interconnect.write32(ptr, arm.regs[REG_PC] + 4);
+                    if arm.watchpoints.contains(ptr) {
+                        event = StepEvent::TriggerWatchpoint(ptr);
+                    }
                 }
             }
 
@@ -711,4 +745,6 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) {
 
         _ => invalid!(op),
     }
+
+    event
 }

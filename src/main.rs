@@ -1,14 +1,10 @@
 #![allow(dead_code)]
 
-use std::io::{ Read };
-use std::fs::File;
-
 extern crate num;
 
 #[macro_use]
 mod utils;
 mod io;
-
 mod arm7tdmi;
 mod interconnect;
 mod thumb_core;
@@ -16,9 +12,12 @@ mod arm_core;
 mod disassemble;
 mod debugger;
 
-use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
-use arm7tdmi::{ Arm7TDMI, REG_PC, StepResult };
+use std::io::{ Read };
+use std::fs::File;
+
+use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;
+use debugger::Debugger;
 
 fn main() {
 //    let cmdline ="
@@ -41,25 +40,13 @@ fn main() {
     let mut file = File::open("roms/bios.bin").unwrap();
     let mut bios = Vec::new();
     file.read_to_end(&mut bios).unwrap();
+    let bios = bios.into_boxed_slice();
 
+    let mut interconnect = Interconnect::new(bios);
     let mut arm = Arm7TDMI::new();
-    let mut interconnect = Interconnect::new(bios.into_boxed_slice());
-
     arm.signal_reset(&mut interconnect);
 
-    loop {
-        let step = arm.get_op_size();
-        let StepResult { op, thumb_mode } = arm.step(&mut interconnect);
-        let pc = arm.regs[REG_PC] - 2*step;
+    let mut debugger = Debugger::new(arm, interconnect);
 
-        if thumb_mode {
-            let dis = disassemble_thumb_opcode(op, pc);
-            println!("@{:08X}: ({:04X}): {}", pc, op, dis);
-        } else {
-            let dis = disassemble_arm_opcode(op, pc);
-            println!("@{:08X}: ({:08X}): {}", pc, op, dis);
-        }
-
-        println!("{:?}", arm);
-    }
+    debugger.run();
 }
