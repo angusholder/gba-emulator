@@ -27,7 +27,7 @@ macro_rules! load_op_reg_offset {
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
         $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
-        if $arm.watchpoints.contains(addr) {
+        if $arm.watchpoint_at(addr) {
             StepEvent::TriggerWatchpoint(addr)
         } else {
             StepEvent::None
@@ -41,7 +41,7 @@ macro_rules! store_op_reg_offset {
         let ro = $arm.regs[($op >> 6 & 7) as usize];
         let addr = rb.wrapping_add(ro);
         $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
-        if $arm.watchpoints.contains(addr) {
+        if $arm.watchpoint_at(addr) {
             StepEvent::TriggerWatchpoint(addr)
         } else {
             StepEvent::None
@@ -55,7 +55,7 @@ macro_rules! load_op_immed_offset {
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
         $arm.regs[($op & 7) as usize] = ($interconnect.$load_fn(addr) as $T) as u32;
-        if $arm.watchpoints.contains(addr) {
+        if $arm.watchpoint_at(addr) {
             StepEvent::TriggerWatchpoint(addr)
         } else {
             StepEvent::None
@@ -69,7 +69,7 @@ macro_rules! store_op_immed_offset {
         let offset = (($op >> 6 & 0x1F) as u32) * mem::size_of::<$T>() as u32;
         let addr = rb.wrapping_add(offset);
         $interconnect.$store_fn(addr, $arm.regs[($op & 7) as usize] as $T);
-        if $arm.watchpoints.contains(addr) {
+        if $arm.watchpoint_at(addr) {
             StepEvent::TriggerWatchpoint(addr)
         } else {
             StepEvent::None
@@ -389,7 +389,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
                 if op & (1 << i) != 0 {
                     sp -= 4;
                     interconnect.write32(sp, arm.regs[i]);
-                    if arm.watchpoints.contains(sp) {
+                    if arm.watchpoint_at(sp) {
                         event = StepEvent::TriggerWatchpoint(sp);
                     }
                 }
@@ -398,7 +398,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             if store_lr {
                 sp -= 4;
                 interconnect.write32(sp, arm.regs[REG_LR]);
-                if arm.watchpoints.contains(sp) {
+                if arm.watchpoint_at(sp) {
                     event = StepEvent::TriggerWatchpoint(sp);
                 }
             }
@@ -412,7 +412,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     arm.regs[i] = interconnect.read32(sp);
-                    if arm.watchpoints.contains(sp) {
+                    if arm.watchpoint_at(sp) {
                         event = StepEvent::TriggerWatchpoint(sp);
                     }
                     sp += 4;
@@ -421,7 +421,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
 
             if load_pc {
                 let addr = interconnect.read32(sp);
-                if arm.watchpoints.contains(sp) {
+                if arm.watchpoint_at(sp) {
                     event = StepEvent::TriggerWatchpoint(sp);
                 }
                 sp += 4;
@@ -438,7 +438,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     interconnect.write32(rb, arm.regs[i]);
-                    if arm.watchpoints.contains(rb) {
+                    if arm.watchpoint_at(rb) {
                         event = StepEvent::TriggerWatchpoint(rb);
                     }
                     rb += 4;
@@ -454,7 +454,7 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             for i in 0..8 {
                 if op & (1 << i) != 0 {
                     arm.regs[i] = interconnect.read32(rb);
-                    if arm.watchpoints.contains(rb) {
+                    if arm.watchpoint_at(rb) {
                         event = StepEvent::TriggerWatchpoint(rb);
                     }
                     rb += 4;
@@ -473,7 +473,9 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             }
         }
 
-        0xDE => unreachable!(), // B{ALWAYS} is undefined
+        0xDE => { // B{ALWAYS} is undefined, must use B
+            arm.signal_undef(interconnect);
+        }
 
         0xDF => { // SWI #value8
             arm.signal_swi(interconnect);
@@ -501,7 +503,9 @@ pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) 
             arm.regs[REG_LR] = (temp - 2) | 1;
         }
 
-        _ => unreachable!(),
+        _ => {
+            arm.signal_undef(interconnect);
+        }
     }
 
     event

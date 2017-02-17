@@ -159,11 +159,11 @@ macro_rules! write_io_method {
                     let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
                     let whole = read_cache!(self.write_cache, $T, addr);
                     let new: $T = if size!($io_type) > size!($T) {
-                        (value >> _offset*8) as $T
+                        (value >> (_offset*8)) as $T
                     } else {
                         #[allow(unused_imports)]
                         use std::{ u8, u16, u32 };
-                        whole & !(($io_type::max_value() as $T) << _offset*8) | ((value as $T) << _offset*8)
+                        whole & !(($io_type::max_value() as $T) << (_offset*8)) | ((value as $T) << (_offset*8))
                     };
                     write_cache!(self.write_cache, $T, addr, new);
                     $setter(self, new);

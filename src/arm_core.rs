@@ -249,6 +249,8 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                             } else {
                                 if arm.has_spsr() {
                                     arm.get_spsr_mut().set_flags(operand2);
+                                } else {
+                                    // TODO: Logging
                                 }
                             }
                         }
@@ -350,7 +352,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
             let rm = arm.regs[rm_index];
 
             let result = if accumulate {
-                (rm * rs).wrapping_add(rn)
+                rm.wrapping_mul(rs).wrapping_add(rn)
             } else {
                 rm.wrapping_mul(rs)
             };
@@ -385,30 +387,26 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                 let a = arm.regs[rm_index] as u64;
                 let b = arm.regs[rs_index] as u64;
 
-                let result: u64 = if accumulate {
+                if accumulate {
                     let low = arm.regs[rd_lo_index] as u64;
                     let high = arm.regs[rd_hi_index] as u64;
                     let c = low | (high << 32);
                     a.wrapping_mul(b).wrapping_add(c)
                 } else {
                     a.wrapping_mul(b)
-                };
-
-                result
+                }
             } else {
                 let a = arm.regs[rm_index] as i32 as i64;
                 let b = arm.regs[rs_index] as i32 as i64;
 
-                let result: i64 = if accumulate {
+                if accumulate {
                     let low = arm.regs[rd_lo_index] as i32 as i64;
                     let high = arm.regs[rd_hi_index] as i32 as i64;
                     let c = low | (high << 32);
-                    a * b + c
+                    (a * b + c) as u64
                 } else {
-                    a * b
-                };
-
-                result as u64
+                    (a * b) as u64
+                }
             };
 
             if set_cc {
@@ -452,7 +450,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                 rn
             };
 
-            if arm.watchpoints.contains(addr) {
+            if arm.watchpoint_at(addr) {
                 event = StepEvent::TriggerWatchpoint(addr);
             }
 
@@ -521,7 +519,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                 rn
             };
 
-            if arm.watchpoints.contains(addr) {
+            if arm.watchpoint_at(addr) {
                 event = StepEvent::TriggerWatchpoint(addr);
             }
 
@@ -532,11 +530,11 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                 }
                 (true, 0b10) => {
                     // LDSB
-                    arm.regs[rd_index] = interconnect.read8(addr) as i8 as i32 as u32;
+                    arm.regs[rd_index] = interconnect.read8(addr) as i8 as u32;
                 }
                 (true, 0b11) => {
                     // LDSH
-                    arm.regs[rd_index] = interconnect.read16(addr) as i16 as i32 as u32;
+                    arm.regs[rd_index] = interconnect.read16(addr) as i16 as u32;
                 }
                 (false, 0b01) => {
                     // STH
@@ -573,7 +571,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
             let addr = arm.regs[rn_index];
             let rm = arm.regs[rm_index];
 
-            if arm.watchpoints.contains(addr) {
+            if arm.watchpoint_at(addr) {
                 event = StepEvent::TriggerWatchpoint(addr);
             }
 
@@ -641,7 +639,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         arm.regs[i] = interconnect.read32(ptr);
-                        if arm.watchpoints.contains(ptr) {
+                        if arm.watchpoint_at(ptr) {
                             event = StepEvent::TriggerWatchpoint(ptr);
                         }
                         ptr = ptr.wrapping_add(WIDTH);
@@ -650,7 +648,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
 
                 if reglist & (1 << REG_PC) != 0 {
                     let target = interconnect.read32(ptr);
-                    if arm.watchpoints.contains(ptr) {
+                    if arm.watchpoint_at(ptr) {
                         event = StepEvent::TriggerWatchpoint(ptr);
                     }
                     arm.branch_to(interconnect, target);
@@ -665,24 +663,22 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                     let rn_is_in_reglist = reglist & rn_mask != 0;
                     let rn_is_first_in_reglist = reglist & (rn_mask - 1) == 0;
 
-                    if rn_is_in_reglist && writeback {
-                        if !rn_is_first_in_reglist {
-                            // TODO: Work out what this means:
-                            /*
-                                "A STM which includes storing the base [...]
-                                with the base second or later in the transfer
-                                order, will store the modified value."
-                            */
-                            // Store base+4 or base+4*i or ..?
-                            unimplemented!();
-                        }
+                    if rn_is_in_reglist && writeback && !rn_is_first_in_reglist {
+                        // TODO: Work out what this means:
+                        /*
+                            "A STM which includes storing the base [...]
+                            with the base second or later in the transfer
+                            order, will store the modified value."
+                        */
+                        // Store base+4 or base+4*i or ..?
+                        unimplemented!();
                     }
                 }
 
                 for i in 0..arm.regs.len()-1 {
                     if reglist & (1 << i as u32) != 0 {
                         interconnect.write32(ptr, arm.regs[i]);
-                        if arm.watchpoints.contains(ptr) {
+                        if arm.watchpoint_at(ptr) {
                             event = StepEvent::TriggerWatchpoint(ptr);
                         }
                         ptr = ptr.wrapping_add(WIDTH);
@@ -693,7 +689,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
                     // "Whenever R15 is stored to memory the stored value is
                     //  the address of the STM instruction plus 12."
                     interconnect.write32(ptr, arm.regs[REG_PC] + 4);
-                    if arm.watchpoints.contains(ptr) {
+                    if arm.watchpoint_at(ptr) {
                         event = StepEvent::TriggerWatchpoint(ptr);
                     }
                 }

@@ -316,13 +316,13 @@ impl Debugger {
             }
 
             ListBreakpoints => {
-                for b in self.arm.breakpoints.iter() {
+                for b in self.arm.iter_breakpoints() {
                     println!("{:08X}", b);
                 }
             }
 
             ListWatchpoints => {
-                for w in self.arm.watchpoints.iter() {
+                for w in self.arm.iter_watchpoints() {
                     println!("{:08X}", w);
                 }
             }

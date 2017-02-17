@@ -1,4 +1,6 @@
 use std::fmt;
+use std::slice::Iter;
+
 use interconnect::{ PrefetchValue, Interconnect };
 use utils::OrderedSet;
 
@@ -214,6 +216,7 @@ pub const REG_PC: usize = 15;
 pub struct Arm7TDMI {
     pub regs: [u32; 16],
     pub cpsr: StatusRegister,
+    pub cycles: usize,
 
     // Supervisor Mode:
     svc_sp: u32,
@@ -249,69 +252,23 @@ impl fmt::Debug for Arm7TDMI {
     }
 }
 
-static SWI_FN_NAMES: [&'static str; 43] = [
-    "SoftReset",
-    "RegisterRamReset",
-    "Halt",
-    "Stop",
-    "IntrWait",
-    "VBlankIntrWait",
-    "Div",
-    "DivArm",
-    "Sqrt",
-    "ArcTan",
-    "ArcTan2",
-    "CPUSet",
-    "CPUFastSet",
-    "BiosChecksum",
-    "BgAffineSet",
-    "ObjAffineSet",
-    "BitUnPack",
-    "LZ77UnCompWRAM",
-    "LZ77UnCompVRAM",
-    "HuffUnComp",
-    "RLUnCompWRAM",
-    "RLUnCompVRAM",
-    "Diff8bitUnFilterWRAM",
-    "Diff8bitUnFilterVRAM",
-    "Diff16bitUnFilter",
-    "SoundBiasChange",
-    "SoundDriverInit",
-    "SoundDriverMode",
-    "SoundDriverMain",
-    "SoundDriverVSync",
-    "SoundChannelClear",
-    "MIDIKey2Freq",
-    "MusicPlayerOpen",
-    "MusicPlayerStart",
-    "MusicPlayerStop",
-    "MusicPlayerContinue",
-    "MusicPlayerFadeOut",
-    "MultiBoot",
-    "HardReset", // Undocumented
-    "CustomHalt", // Undocumented
-    "SoundDriverVSyncOff",
-    "SoundDriverVSyncOn",
-    "GetJumpList", // Undocumented
-];
-
 impl Arm7TDMI {
     pub fn new() -> Arm7TDMI {
         let mut result = Arm7TDMI {
-            cpsr: Default::default(),
             regs: Default::default(),
+            cpsr: Default::default(),
+            cycles: 0,
 
             svc_sp: 0x03007FE0,
             svc_lr: 0,
+            svc_spsr: Default::default(),
 
             irq_sp: 0x03007FA0,
             irq_lr: 0,
+            irq_spsr: Default::default(),
 
             und_sp: 0,
             und_lr: 0,
-
-            svc_spsr: Default::default(),
-            irq_spsr: Default::default(),
             und_spsr: Default::default(),
 
             breakpoints: OrderedSet::new(),
@@ -505,6 +462,18 @@ impl Arm7TDMI {
 
     pub fn remove_watchpoint(&mut self, addr: u32) -> bool {
         self.watchpoints.remove(addr)
+    }
+
+    pub fn watchpoint_at(&self, addr: u32) -> bool {
+        self.watchpoints.contains(addr)
+    }
+
+    pub fn iter_watchpoints(&self) -> Iter<u32> {
+        self.watchpoints.iter()
+    }
+
+    pub fn iter_breakpoints(&self) -> Iter<u32> {
+        self.breakpoints.iter()
     }
 
     pub fn step(&mut self, interconnect: &mut Interconnect) -> StepInfo {
