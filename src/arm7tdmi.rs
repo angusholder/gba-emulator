@@ -1,158 +1,114 @@
 use std::fmt;
-use std::slice::Iter;
 
+use num::FromPrimitive;
 use interconnect::{ PrefetchValue, Interconnect };
-use utils::OrderedSet;
+use utils::{ OrderedSet, Cycle };
 
+enum_from_primitive! {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ConditionCode {
-    Eq, // Z=1:            equal
-    Ne, // Z=0:            not equal
-    Cs, // C=1:            unsigned higher or same
-    Cc, // C=0:            unsigned lower
-    Mi, // N=1:            negative
-    Pl, // N=0:            positive or zero
-    Vs, // V=1:            overflow
-    Vc, // V=0:            no overflow
-    Hi, // C=1 AND Z=0:    unsigned higher
-    Ls, // C=0 OR Z=1:     unsigned lower or same
-    Ge, // N=V:            greater or equal
-    Lt, // N!=V:           less than
-    Gt, // Z=0 AND (N=V):  greater than
-    Le, // Z=1 OR (N!=V):  less than or equal
-    Al, // 1:              always
+    Eq = 0b0000, // Z=1:            equal
+    Ne = 0b0001, // Z=0:            not equal
+    Cs = 0b0010, // C=1:            unsigned higher or same
+    Cc = 0b0011, // C=0:            unsigned lower
+    Mi = 0b0100, // N=1:            negative
+    Pl = 0b0101, // N=0:            positive or zero
+    Vs = 0b0110, // V=1:            overflow
+    Vc = 0b0111, // V=0:            no overflow
+    Hi = 0b1000, // C=1 AND Z=0:    unsigned higher
+    Ls = 0b1001, // C=0 OR Z=1:     unsigned lower or same
+    Ge = 0b1010, // N=V:            greater or equal
+    Lt = 0b1011, // N!=V:           less than
+    Gt = 0b1100, // Z=0 AND (N=V):  greater than
+    Le = 0b1101, // Z=1 OR (N!=V):  less than or equal
+    Al = 0b1110, // 1:              always
+}
 }
 
-impl From<u32> for ConditionCode {
-    fn from(bits: u32) -> Self {
-        use self::ConditionCode::*;
-        match bits {
-            0b0000 => Eq,
-            0b0001 => Ne,
-            0b0010 => Cs,
-            0b0011 => Cc,
-            0b0100 => Mi,
-            0b0101 => Pl,
-            0b0110 => Vs,
-            0b0111 => Vc,
-            0b1000 => Hi,
-            0b1001 => Ls,
-            0b1010 => Ge,
-            0b1011 => Lt,
-            0b1100 => Gt,
-            0b1101 => Le,
-            0b1110 => Al,
-            _ => unreachable!(),
-        }
-    }
+enum_from_primitive! {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum OperatingMode {
+    None       = 0b00000, // spsr.mode is set to 0 in bios
+    User       = 0b10000,
+    Irq        = 0b10010,
+    Supervisor = 0b10011,
+    Undefined  = 0b11011,
+    System     = 0b11111,
 }
-
-impl From<ConditionCode> for u32 {
-    fn from(cc: ConditionCode) -> u32 {
-        use self::ConditionCode::*;
-        match cc {
-            Eq => 0b0000,
-            Ne => 0b0001,
-            Cs => 0b0010,
-            Cc => 0b0011,
-            Mi => 0b0100,
-            Pl => 0b0101,
-            Vs => 0b0110,
-            Vc => 0b0111,
-            Hi => 0b1000,
-            Ls => 0b1001,
-            Ge => 0b1010,
-            Lt => 0b1011,
-            Gt => 0b1100,
-            Le => 0b1101,
-            Al => 0b1110,
-        }
-    }
 }
 
 impl fmt::Display for ConditionCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        static CC_NAMES: [&'static str; 15] = [
-            "eq","ne","cs","cc","mi","pl","vs","vc","hi","ls","ge","lt","gt","le",""
-        ];
-        let i = *self as u32;
-        if i > 0b1110 {
-            Err(fmt::Error)
-        } else {
-            write!(f, "{}", CC_NAMES[i as usize])
-        }
-    }
-}
+        use self::ConditionCode::*;
+        let s = match *self {
+            Eq => "eq",
+            Ne => "ne",
+            Cs => "cs",
+            Cc => "cc",
+            Mi => "mi",
+            Pl => "pl",
+            Vs => "vs",
+            Vc => "vc",
+            Hi => "hi",
+            Ls => "ls",
+            Ge => "ge",
+            Lt => "lt",
+            Gt => "gt",
+            Le => "le",
+            Al => "al",
+        };
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
- #[repr(u32)]
-pub enum OperatingMode {
-    // BIOS sets SPSR.mode to 0, so we allow invalid mode bitpatterns but
-    // assert whenever in an invalid mode.
-    Invalid(u8),
-    User,
-    Irq,
-    Supervisor,
-    Undefined, // Undefined instruction executed
-    System,
+        write!(f, "{}", s)
+    }
 }
 
 impl OperatingMode {
-    pub fn is_privileged(&self) -> bool {
-        *self != OperatingMode::User
+    pub fn is_privileged(self) -> bool {
+        self != OperatingMode::User
     }
 }
 
-impl From<u32> for OperatingMode {
-    fn from(bits: u32) -> Self {
-        use self::OperatingMode::*;
-        match bits & 0b11111 {
-            0b10000 => User,
-            0b10001 => {
-                panic!("ERROR: Tried to enter FIQ mode");
-            }
-            0b10010 => Irq,
-            0b10011 => Supervisor,
-            0b10111 => {
-                panic!("ERROR: Tried to enter ABORT mode");
-            }
-            0b11011 => Undefined,
-            0b11111 => System,
-            other => {
-                println!("WARNING: Entered invalid mode 0b{:05b}", other);
-                Invalid(other as u8)
-            }
+#[derive(Debug, Clone, Copy)]
+pub struct StatusRegister {
+    pub n: bool,
+    pub z: bool,
+    pub c: bool,
+    pub v: bool,
+
+    pub irq_disable: bool,
+    pub fiq_disable: bool,
+    pub thumb_mode: bool,
+    pub mode: OperatingMode,
+}
+
+impl From<u32> for StatusRegister {
+    fn from(bits: u32) -> StatusRegister {
+        StatusRegister {
+            n: (1 << 31) & bits != 0,
+            z: (1 << 30) & bits != 0,
+            c: (1 << 29) & bits != 0,
+            v: (1 << 28) & bits != 0,
+            irq_disable: (1 << 7) & bits != 0,
+            fiq_disable: (1 << 6) & bits != 0,
+            thumb_mode: (1 << 5) & bits != 0,
+            mode: OperatingMode::from_u32(bits & 0x1F).unwrap()
         }
     }
 }
 
-impl From<OperatingMode> for u32 {
-    fn from(mode: OperatingMode) -> Self {
-        match mode {
-            OperatingMode::User        => 0b10000,
-            OperatingMode::Irq         => 0b10010,
-            OperatingMode::Supervisor  => 0b10011,
-            OperatingMode::Undefined   => 0b11011,
-            OperatingMode::System      => 0b11111,
-            OperatingMode::Invalid(other) => other as u32,
-        }
+impl From<StatusRegister> for u32 {
+    fn from(sr: StatusRegister) -> u32 {
+        let mut bits = 0;
+        bits |= (sr.n as u32) << 31;
+        bits |= (sr.z as u32) << 30;
+        bits |= (sr.c as u32) << 29;
+        bits |= (sr.v as u32) << 28;
+        bits |= (sr.irq_disable as u32) << 7;
+        bits |= (sr.fiq_disable as u32) << 6;
+        bits |= (sr.thumb_mode as u32) << 5;
+        bits |= sr.mode as u32;
+        bits
     }
-}
-
-unpacked_bitfield_struct! {
-    #[derive(Debug, Clone, Copy)]
-    pub struct StatusRegister: u32 {
-        (31,1) n: bool,
-        (30,1) z: bool,
-        (29,1) c: bool,
-        (28,1) v: bool,
-
-        (7,1) irq_disable: bool,
-        (6,1) fiq_disable: bool,
-        (5,1) thumb_mode: bool,
-        (0,5) mode: OperatingMode,
-    }
-
 }
 
 impl Default for StatusRegister {
@@ -166,7 +122,7 @@ impl Default for StatusRegister {
             irq_disable: false,
             fiq_disable: false,
             thumb_mode: false,
-            mode: OperatingMode::User,
+            mode: OperatingMode::None,
         }
     }
 }
@@ -216,7 +172,7 @@ pub const REG_PC: usize = 15;
 pub struct Arm7TDMI {
     pub regs: [u32; 16],
     pub cpsr: StatusRegister,
-    pub cycles: usize,
+    pub cycles: Cycle,
 
     // Supervisor Mode:
     svc_sp: u32,
@@ -234,8 +190,8 @@ pub struct Arm7TDMI {
     und_spsr: StatusRegister,
 
     // For use by the debugger
-    breakpoints: OrderedSet<u32>,
-    watchpoints: OrderedSet<u32>,
+    pub breakpoints: OrderedSet<u32>,
+    pub watchpoints: OrderedSet<u32>,
 }
 
 impl fmt::Debug for Arm7TDMI {
@@ -254,16 +210,16 @@ impl fmt::Debug for Arm7TDMI {
 
 impl Arm7TDMI {
     pub fn new() -> Arm7TDMI {
-        let mut result = Arm7TDMI {
+        Arm7TDMI {
             regs: Default::default(),
             cpsr: Default::default(),
-            cycles: 0,
+            cycles: Cycle(0),
 
-            svc_sp: 0x03007FE0,
+            svc_sp: 0,
             svc_lr: 0,
             svc_spsr: Default::default(),
 
-            irq_sp: 0x03007FA0,
+            irq_sp: 0,
             irq_lr: 0,
             irq_spsr: Default::default(),
 
@@ -273,11 +229,7 @@ impl Arm7TDMI {
 
             breakpoints: OrderedSet::new(),
             watchpoints: OrderedSet::new(),
-        };
-
-        result.regs[REG_SP] = 0x03007F00;
-
-        result
+        }
     }
 
     pub fn bank_swap(&mut self, mode: OperatingMode) {
@@ -291,7 +243,7 @@ impl Arm7TDMI {
             OperatingMode::Supervisor => helper(&mut self.regs, &mut self.svc_lr, &mut self.svc_sp),
             OperatingMode::Irq        => helper(&mut self.regs, &mut self.irq_lr, &mut self.irq_sp),
             OperatingMode::Undefined  => helper(&mut self.regs, &mut self.und_lr, &mut self.und_sp),
-            OperatingMode::Invalid(_) => unreachable!(),
+            OperatingMode::None => {}
             OperatingMode::User | OperatingMode::System => {}
         }
     }
@@ -323,11 +275,21 @@ impl Arm7TDMI {
         }
     }
 
+    pub fn set_cpsr(&mut self, new: StatusRegister) {
+        assert!(new.thumb_mode == self.cpsr.thumb_mode);
+        if new.mode != self.cpsr.mode {
+            let cur_mode = self.cpsr.mode;
+            self.bank_swap(cur_mode);
+            self.bank_swap(new.mode);
+        }
+        self.cpsr = new;
+    }
+
     pub fn get_spsr(&self) -> StatusRegister {
         match self.cpsr.mode {
             OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
             OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::Invalid(_) => unreachable!(),
+            OperatingMode::None => unreachable!(),
             OperatingMode::Supervisor => self.svc_spsr,
             OperatingMode::Irq        => self.irq_spsr,
             OperatingMode::Undefined  => self.und_spsr,
@@ -338,7 +300,7 @@ impl Arm7TDMI {
         match self.cpsr.mode {
             OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
             OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::Invalid(_) => unreachable!(),
+            OperatingMode::None => unreachable!(),
             OperatingMode::Supervisor => &mut self.svc_spsr,
             OperatingMode::Irq        => &mut self.irq_spsr,
             OperatingMode::Undefined  => &mut self.und_spsr,
@@ -347,8 +309,7 @@ impl Arm7TDMI {
 
     pub fn set_spsr(&mut self, psr: StatusRegister) {
         match self.cpsr.mode {
-            OperatingMode::User | OperatingMode::System => {},
-            OperatingMode::Invalid(_) => unreachable!(),
+            OperatingMode::User | OperatingMode::System | OperatingMode::None => {},
             OperatingMode::Supervisor => self.svc_spsr = psr,
             OperatingMode::Irq        => self.irq_spsr = psr,
             OperatingMode::Undefined  => self.und_spsr = psr,
@@ -359,36 +320,38 @@ impl Arm7TDMI {
         match self.cpsr.mode {
             OperatingMode::User |
             OperatingMode::System |
-            OperatingMode::Invalid(_) => false,
+            OperatingMode::None => false,
             _ => true,
         }
     }
 
     pub fn branch_to(&mut self, interconnect: &mut Interconnect, addr: u32) {
         let step = self.get_op_size();
+        let mut cycles = Cycle(0);
         if self.cpsr.thumb_mode {
             debug_assert!(addr & 1 == 0);
             interconnect.prefetch[0] = PrefetchValue {
-                op: interconnect.exec16(addr) as u32,
+                op: add_cycles!(cycles, interconnect.exec_thumb_slow(addr)) as u32,
                 addr: addr,
             };
             interconnect.prefetch[1] = PrefetchValue {
-                op: interconnect.exec16(addr + step) as u32,
+                op: add_cycles!(cycles, interconnect.exec_thumb_slow(addr + step)) as u32,
                 addr: addr + step,
             };
             self.regs[REG_PC] = addr + step;
         } else {
             debug_assert!(addr & 3 == 0);
             interconnect.prefetch[0] = PrefetchValue {
-                op: interconnect.exec32(addr),
+                op: add_cycles!(cycles, interconnect.exec_arm_slow(addr)),
                 addr: addr,
             };
             interconnect.prefetch[1] = PrefetchValue {
-                op: interconnect.exec32(addr + step),
+                op: add_cycles!(cycles, interconnect.exec_arm_slow(addr + step)),
                 addr: addr + step,
             };
             self.regs[REG_PC] = addr + step;
         }
+        self.cycles += cycles;
     }
 
     pub fn branch_exchange(&mut self, interconnect: &mut Interconnect, addr: u32) {
@@ -407,7 +370,6 @@ impl Arm7TDMI {
     pub fn signal_reset(&mut self, interconnect: &mut Interconnect) {
         const INTVEC_RESET: u32 = 0x0;
 
-        self.svc_lr = 0xDEADBEEF; // State is unpredictable on reset
         self.switch_mode(OperatingMode::Supervisor);
         self.cpsr.fiq_disable = true;
         self.cpsr.irq_disable = true;
@@ -448,34 +410,6 @@ impl Arm7TDMI {
         self.branch_to(interconnect, INTVEC_IRQ);
     }
 
-    pub fn add_breakpoint(&mut self, addr: u32) -> bool {
-        self.breakpoints.insert(addr)
-    }
-
-    pub fn remove_breakpoint(&mut self, addr: u32) -> bool {
-        self.breakpoints.remove(addr)
-    }
-
-    pub fn add_watchpoint(&mut self, addr: u32) -> bool {
-        self.watchpoints.insert(addr)
-    }
-
-    pub fn remove_watchpoint(&mut self, addr: u32) -> bool {
-        self.watchpoints.remove(addr)
-    }
-
-    pub fn watchpoint_at(&self, addr: u32) -> bool {
-        self.watchpoints.contains(addr)
-    }
-
-    pub fn iter_watchpoints(&self) -> Iter<u32> {
-        self.watchpoints.iter()
-    }
-
-    pub fn iter_breakpoints(&self) -> Iter<u32> {
-        self.breakpoints.iter()
-    }
-
     pub fn step(&mut self, interconnect: &mut Interconnect) -> StepInfo {
         use thumb_core::step_thumb;
         use arm_core::step_arm;
@@ -498,9 +432,9 @@ impl Arm7TDMI {
 
         interconnect.prefetch[0] = interconnect.prefetch[1];
         let next_op = if self.cpsr.thumb_mode {
-            interconnect.exec16(self.regs[REG_PC]) as u32
+            interconnect.exec_thumb_slow(self.regs[REG_PC]).1 as u32
         } else {
-            interconnect.exec32(self.regs[REG_PC])
+            interconnect.exec_arm_slow(self.regs[REG_PC]).1
         };
 
         interconnect.prefetch[1] = PrefetchValue {

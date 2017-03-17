@@ -1,5 +1,5 @@
 use std::cmp::Ord;
-use std::ops::Deref;
+use std::ops::{ Add, AddAssign };
 
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
@@ -124,6 +124,7 @@ macro_rules! read_io_method {
             use std::cmp;
             let mut result: $io_type = 0;
             let mut bytes_handled = 0;
+            let addr = addr & 0xFFF;
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
@@ -149,6 +150,7 @@ macro_rules! write_io_method {
         fn $fn_name(&mut self, addr: u32, value: $io_type) {
             use std::cmp;
             let mut bytes_handled = 0;
+            let addr = addr & 0xFFF;
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
@@ -157,7 +159,7 @@ macro_rules! write_io_method {
                     bytes_handled += size!($T);
                     let _offset = ($case_addr&!mask | addr&!mask) as $T;
                     let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
-                    let whole = read_cache!(self.write_cache, $T, addr);
+                    let whole = read_cache!(self.io_cache, $T, addr);
                     let new: $T = if size!($io_type) > size!($T) {
                         (value >> (_offset*8)) as $T
                     } else {
@@ -165,7 +167,7 @@ macro_rules! write_io_method {
                         use std::{ u8, u16, u32 };
                         whole & !(($io_type::max_value() as $T) << (_offset*8)) | ((value as $T) << (_offset*8))
                     };
-                    write_cache!(self.write_cache, $T, addr, new);
+                    write_cache!(self.io_cache, $T, addr, new);
                     $setter(self, new);
                 }
             })+
@@ -209,7 +211,7 @@ fn memory_map() {
 
     impl_io_map! {
         [Foo]
-        (u32, 0u32) {
+        (u32, 0u32, a) {
             read => |this: &Foo| {
                 this.a
             },
@@ -217,7 +219,7 @@ fn memory_map() {
                 this.a = value;
             }
         }
-        (u16, 6u32) {
+        (u16, 6u32, b) {
             read => |this: &Foo| {
                 this.b
             },
@@ -225,7 +227,7 @@ fn memory_map() {
                 this.b = value;
             }
         }
-        (u8, 4u32) {
+        (u8, 4u32, c) {
             read => |this: &Foo| {
                 this.c
             },
@@ -233,7 +235,7 @@ fn memory_map() {
                 this.c = value;
             }
         }
-        (u8, 5u32) {
+        (u8, 5u32, d) {
             read => |this: &Foo| {
                 this.d
             },
@@ -290,9 +292,9 @@ macro_rules! check_bounds {
 }
 
 impl Buffer {
-    pub fn new(buffer: Box<[u8]>) -> Buffer {
+    pub fn new(buffer: &[u8]) -> Buffer {
         Buffer {
-            buffer: buffer
+            buffer: buffer.to_vec().into_boxed_slice()
         }
     }
 
@@ -333,8 +335,17 @@ impl Buffer {
         check_bounds!(self.buffer, index + 3);
         unsafe { *(self.buffer.as_ptr().offset(index as isize) as * mut u32) = value; }
     }
+
+    pub fn as_ptr(&self) -> *const u8 {
+        self.buffer.as_ptr()
+    }
+
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
 }
 
+use std::slice::Iter;
 #[derive(Clone)]
 pub struct OrderedSet<T> {
     vec: Vec<T>,
@@ -368,12 +379,82 @@ impl<T: Ord + Copy> OrderedSet<T> {
             false
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.vec.len()
+    }
+
+    pub fn iter(&self) -> Iter<T> {
+        self.vec.iter()
+    }
 }
 
-impl<T> Deref for OrderedSet<T> {
-    type Target = [T];
+#[derive(Clone, Copy)]
+pub struct Cycle(pub i32);
 
-    fn deref(&self) -> &[T] {
-        &self.vec[..]
+macro_rules! add_cycles {
+    ($cycles:expr, $load_expr:expr) => {{
+        let (cycles_used, read) = $load_expr;
+        $cycles += cycles_used;
+        read
+    }}
+}
+
+impl Add for Cycle {
+    type Output = Cycle;
+    fn add(self, right: Cycle) -> Cycle {
+        Cycle(self.0 + right.0)
     }
+}
+
+impl Add<i32> for Cycle {
+    type Output = Cycle;
+    fn add(self, right: i32) -> Cycle {
+        Cycle(self.0 + right)
+    }
+}
+
+impl AddAssign for Cycle {
+    fn add_assign(&mut self, right: Cycle) {
+        self.0 += right.0;
+    }
+}
+
+impl AddAssign<i32> for Cycle {
+    fn add_assign(&mut self, right: i32) {
+        self.0 += right;
+    }
+}
+
+macro_rules! check_watchpoint {
+    ($arm:expr, $addr:expr) => {
+        if $arm.watchpoints.contains($addr) {
+            return StepEvent::TriggerWatchpoint($addr);
+        }
+    }
+}
+
+use arm7tdmi::Arm7TDMI;
+#[inline(always)]
+pub fn set_zn(arm: &mut Arm7TDMI, value: u32) {
+    arm.cpsr.z = value == 0;
+    arm.cpsr.n = (value as i32) < 0;
+}
+
+#[inline(always)]
+pub fn add_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32) {
+    arm.cpsr.v = (a as i32).overflowing_add(b as i32).1;
+    arm.cpsr.c = a.overflowing_add(b).1;
+}
+
+#[inline(always)]
+pub fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32) {
+    arm.cpsr.v = (a as i32).overflowing_sub(b as i32).1;
+    arm.cpsr.c = a.overflowing_sub(b).1;
+}
+
+#[inline(always)]
+pub fn sign_extend(n: u32, n_bits: usize) -> u32 {
+    let shift = 32 - n_bits;
+    (((n << shift) as i32) >> shift) as u32
 }

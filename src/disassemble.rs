@@ -46,13 +46,8 @@ fn build_register_list(registers: u16) -> String {
 }
 
 fn sign_extend(n: u32, n_bits: usize) -> u32 {
-    let lower_mask = (1 << n_bits) - 1;
-    let upper_mask = !lower_mask;
-    if (n & (1 << (n_bits - 1))) != 0 {
-        upper_mask | n
-    } else {
-        n
-    }
+    let shift = 32 - n_bits;
+    (((n << shift) as i32) >> shift) as u32
 }
 
 pub fn disassemble_arm_opcode(op: u32, pc: u32) -> String {
@@ -96,7 +91,8 @@ pub fn disassemble_arm_opcode(op: u32, pc: u32) -> String {
             let operand2 = if (op & 0x0200_0000) != 0 { // Operand = immediate rotated right by immediate
                 let imm = (op & 0xFF) as u32;
                 let rotate = (op >> 8 & 0xF) as u32;
-                format!("#{}", imm.rotate_right(rotate * 2))
+                let value = imm.rotate_right(rotate * 2);
+                format!("#{} ; 0x{:X}", value, value)
             } else {
                 let rm = (op & 0xF) as usize;
                 let shift = op >> 4 & 0xFF;
@@ -235,7 +231,8 @@ pub fn disassemble_arm_opcode(op: u32, pc: u32) -> String {
             let imm_offset = (op & 0x0200_0000) == 0;
 
             let offset = if imm_offset {
-                format!("#{}{}", up, op & 0xFFF)
+                let offset = op & 0xFFF;
+                format!("#{}{}", up, offset)
             } else {
                 let rm = (op & 0xF) as usize;
                 let shift = op >> 4 & 0xFF;
@@ -558,7 +555,7 @@ pub fn disassemble_thumb_opcode(op: u32, pc: u32) -> String {
         }
 
         0x90 ... 0x9F => {
-            let imm = op & 0xFF;
+            let imm = (op & 0xFF) << 2;
             let rd = (op >> 8) & 7;
             let load = (op & 0x0800) != 0;
 
@@ -570,7 +567,7 @@ pub fn disassemble_thumb_opcode(op: u32, pc: u32) -> String {
         }
 
         0xA0 ... 0xAF => {
-            let imm = op & 0xFF;
+            let imm = (op & 0xFF) << 2;
             let rd = (op >> 8) & 7;
             let sp = (op & 0x0800) != 0;
 

@@ -93,7 +93,7 @@ impl fmt::Display for CommandError {
         let s = match *self {
             NoInput => "no input",
             ExpectedArgument => "expected argument",
-            UnknownCommand => "unknown argument",
+            UnknownCommand => "unknown command",
             InvalidInteger => "invalid integer",
             TooManyArguments => "too many arguments",
             InvalidIdentifier => "invalid identifier",
@@ -199,11 +199,11 @@ impl Debugger {
         }
     }
 
-    fn disassemble_at(&self, thumb_mode: bool, addr: u32) {
+    fn disassemble_at(&mut self, thumb_mode: bool, addr: u32) {
         let op = if thumb_mode {
-            self.interconnect.exec16(addr) as u32
+            self.interconnect.exec_thumb_slow(addr).1 as u32
         } else {
-            self.interconnect.exec32(addr)
+            self.interconnect.exec_arm_slow(addr).1
         };
 
         Debugger::disassemble(thumb_mode, op, addr);
@@ -226,7 +226,7 @@ impl Debugger {
                 tx.send(cmd).unwrap();
                 line.clear();
             }
-        });
+        }).expect("failed to spawn thread");
 
         loop {
             match state {
@@ -252,12 +252,12 @@ impl Debugger {
                         let StepInfo { op, op_addr, thumb_mode, event } = self.arm.step(&mut self.interconnect);
                         match event {
                             StepEvent::TriggerWatchpoint(addr) => {
-                                println!("Watchpoint triggered at {:08X}", addr);
+                                println!("Watchpoint triggered at {:06X}", addr);
                                 state = State::Paused;
                                 break;
                             }
                             StepEvent::TriggerBreakpoint(addr) => {
-                                println!("Breakpoint triggered at {:08X}", addr);
+                                println!("Breakpoint triggered at {:06X}", addr);
                                 state = State::Paused;
 
                                 Debugger::disassemble(thumb_mode, op, op_addr);
@@ -280,11 +280,11 @@ impl Debugger {
 
                         match event {
                             StepEvent::TriggerWatchpoint(addr) => {
-                                println!("Watchpoint triggered at {:08X}", addr);
+                                println!("Watchpoint triggered at {:06X}", addr);
                                 break 'step_loop;
                             }
                             StepEvent::TriggerBreakpoint(addr) => {
-                                println!("Breakpoint triggered at {:08X}", addr);
+                                println!("Breakpoint triggered at {:06X}", addr);
                                 break 'step_loop;
                             }
                             StepEvent::None => {}
@@ -303,27 +303,27 @@ impl Debugger {
         use self::Command::*;
         match cmd {
             AddBreakpoint(addr) => {
-                self.arm.add_breakpoint(addr);
+                self.arm.breakpoints.insert(addr);
             }
             DelBreakpoint(addr) => {
-                self.arm.remove_breakpoint(addr);
+                self.arm.breakpoints.remove(addr);
             }
             AddWatchpoint(addr) => {
-                self.arm.add_watchpoint(addr);
+                self.arm.watchpoints.insert(addr);
             }
             DelWatchpoint(addr) => {
-                self.arm.remove_watchpoint(addr);
+                self.arm.watchpoints.remove(addr);
             }
 
             ListBreakpoints => {
-                for b in self.arm.iter_breakpoints() {
-                    println!("{:08X}", b);
+                for b in self.arm.breakpoints.iter() {
+                    println!("{:06X}", b);
                 }
             }
 
             ListWatchpoints => {
-                for w in self.arm.iter_watchpoints() {
-                    println!("{:08X}", w);
+                for w in self.arm.watchpoints.iter() {
+                    println!("{:06X}", w);
                 }
             }
 
@@ -353,23 +353,29 @@ impl Debugger {
             }
 
             LoadB(addr) => {
-                let val = self.interconnect.read8(addr);
+                let val = self.interconnect.read8(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadH(addr) => {
-                let val = self.interconnect.read16(addr);
+                let val = self.interconnect.read16(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadW(addr) => {
-                let val = self.interconnect.read32(addr);
+                let val = self.interconnect.read32(addr).1;
                 println!("{} ({:08X})", val, val);
             }
 
-            StoreB(addr, val) => self.interconnect.write8(addr, val),
-            StoreH(addr, val) => self.interconnect.write16(addr, val),
-            StoreW(addr, val) => self.interconnect.write32(addr, val),
+            StoreB(addr, val) => {
+                self.interconnect.write8(addr, val);
+            }
+            StoreH(addr, val) => {
+                self.interconnect.write16(addr, val);
+            }
+            StoreW(addr, val) => {
+                self.interconnect.write32(addr, val);
+            }
 
-            Disassemble(count) => {
+            Disassemble(_count) => {
                 unimplemented!();
             }
             ListRegs => {
