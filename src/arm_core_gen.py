@@ -121,6 +121,8 @@ def get_second_operand(I, set_cc, discriminant):
 
         shift_type = discriminant >> 1 & 3
         shift_func = BARREL_SHIFT_OPS[shift_type]
+        if set_cc:
+            shift_func += '_set_flags'
 
         return f'''{{
         let rm = arm.regs[(op & 0xF) as usize];
@@ -482,7 +484,7 @@ let value = {operation};
     # Block Data Transfer
     if match(i, '100xxxxxXXXX'):
         assert not ins_name
-        load = i & 0x100000 != 0
+        load = i & 0x010 != 0
         ins_name = 'ldm' if load else 'stm'
 
     # MRS (PSR to register)

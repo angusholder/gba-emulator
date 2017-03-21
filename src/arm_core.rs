@@ -19,14 +19,14 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
     ARM_LUT[discr as usize](arm, interconnect, op)
 }
 
-pub fn barrel_shift_lsl(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_lsl(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount >= 32 {
         0
     } else {
         rm << shift_amount
     }
 }
-pub fn barrel_shift_lsl_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_lsl_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount == 32 {
         arm.cpsr.c = (rm & 1) != 0;
         0
@@ -41,14 +41,14 @@ pub fn barrel_shift_lsl_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32
     }
 }
 
-pub fn barrel_shift_lsr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_lsr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount >= 32 || shift_amount == 0 {
         0
     } else {
         rm >> shift_amount
     }
 }
-pub fn barrel_shift_lsr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_lsr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount == 32 || shift_amount == 0 {
         arm.cpsr.c = (rm >> 31) != 0;
         0
@@ -61,7 +61,7 @@ pub fn barrel_shift_lsr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32
     }
 }
 
-pub fn barrel_shift_asr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_asr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount >= 32 || shift_amount == 0 {
         // Return sign extension of rm
         if (rm >> 31) != 0 {
@@ -73,7 +73,7 @@ pub fn barrel_shift_asr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 
         ((rm as i32) >> shift_amount) as u32
     }
 }
-pub fn barrel_shift_asr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_asr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount >= 32 || shift_amount == 0 { // Return sign extension of rm
         if (rm >> 31) != 0 {
             arm.cpsr.c = true;
@@ -88,7 +88,7 @@ pub fn barrel_shift_asr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32
     }
 }
 
-pub fn barrel_shift_ror(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_ror(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount == 0 { // RRX
         let carry_in = arm.cpsr.c as u32;
         (rm >> 1) | (carry_in << 31)
@@ -96,7 +96,7 @@ pub fn barrel_shift_ror(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
         rm.rotate_right(shift_amount)
     }
 }
-pub fn barrel_shift_ror_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
+fn barrel_shift_ror_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
     if shift_amount == 0 { // RRX
         let carry_in = arm.cpsr.c as u32;
         arm.cpsr.c = (rm & 1) != 0;
@@ -191,13 +191,12 @@ fn op_ldm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepE
             addr = addr - reglist.count_ones() * 4;
             for i in 0..15 {
                 if reglist & (1 << i) != 0 {
-                    addr += 4;
                     check_watchpoint!(arm, addr);
                     arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+                    addr += 4;
                 }
             }
             if reglist & (1 << REG_PC) != 0 {
-                addr += 4;
                 check_watchpoint!(arm, addr);
                 let target = add_cycles!(cycles, interconnect.read32(addr));
                 arm.branch_to(interconnect, target);
@@ -227,8 +226,8 @@ fn op_stm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepE
     let mut addr = arm.regs[rn_index];
 
     match (up, preindex) {
-        (true, false) => {
-            for i in 0..15 { // Post-increment
+        (true, false) => { // Post-increment
+            for i in 0..15 {
                 if reglist & (1 << i) != 0 {
                     check_watchpoint!(arm, addr);
                     cycles += interconnect.write32(addr, arm.regs[i]);
@@ -282,13 +281,12 @@ fn op_stm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepE
             addr = addr - reglist.count_ones() * 4;
             for i in 0..15 {
                 if reglist & (1 << i) != 0 {
-                    addr += 4;
                     check_watchpoint!(arm, addr);
                     cycles += interconnect.write32(addr, arm.regs[i]);
+                    addr += 4;
                 }
             }
             if reglist & (1 << REG_PC) != 0 {
-                addr += 4;
                 check_watchpoint!(arm, addr);
                 // address of current instruction + 12 is stored
                 cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);

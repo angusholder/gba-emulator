@@ -27,6 +27,7 @@ ALU_OPS = {
     set_zn(arm, result);
     arm.cpsr.c = ((rd >> (32 - rs)) & 1) != 0;
     arm.regs[rd_index] = result;
+    cycles += 1;
 '''),
 
 0b0011: (
@@ -36,6 +37,7 @@ ALU_OPS = {
     set_zn(arm, result);
     arm.cpsr.c = ((rd >> (rs - 1)) & 1) != 0;
     arm.regs[rd_index] = result;
+    cycles += 1;
 '''),
 
 0b0100: (
@@ -45,6 +47,7 @@ ALU_OPS = {
     set_zn(arm, result);
     arm.cpsr.c = ((rd >> (rs - 1)) & 1) != 0;
     arm.regs[rd_index] = result;
+    cycles += 1;
 '''),
 
 0b0101: (
@@ -118,6 +121,7 @@ ALU_OPS = {
     '''
     let result = rd * rs;
     set_zn(arm, result);
+    cycles += (rs.leading_zeros() / 8) as i32;
     // MUL sets c and v to meaningless values, so we don't need to touch them.
     arm.regs[rd_index] = result;
 '''),
@@ -171,6 +175,7 @@ LOAD_OP_REG_OFFSET = '''
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
     arm.regs[(op & 7) as usize] = add_cycles!(cycles, interconnect.{load_fn}(addr)) as {T} as u32;
+    cycles += 1; // internal cycle for address calculation
 '''
 
 STORE_OP_REG_OFFSET = '''
@@ -187,6 +192,7 @@ LOAD_OP_IMMED_OFFSET = '''
     let addr = rb.wrapping_add(offset);
     check_watchpoint!(arm, addr);
     arm.regs[(op & 7) as usize] = add_cycles!(cycles, interconnect.{load_fn}(addr)) as {T} as u32;
+    cycles += 1; // internal cycle for address calculation
 '''
 
 STORE_OP_IMMED_OFFSET = '''
@@ -319,6 +325,7 @@ FUNCTIONS = {
     let addr = (arm.regs[REG_PC] & !2) + offset;
     check_watchpoint!(arm, addr);
     arm.regs[(op >> 8 & 7) as usize] = add_cycles!(cycles, interconnect.read32(addr));
+    cycles += 1; // internal cycle for address calculation
 ''',
 
 'str_sprel_immoffset': '''
@@ -333,6 +340,7 @@ FUNCTIONS = {
     let addr = arm.regs[REG_SP].wrapping_add(offset);
     check_watchpoint!(arm, addr);
     arm.regs[(op >> 8 & 7) as usize] = add_cycles!(cycles, interconnect.read32(addr));
+    cycles += 1; // internal cycle for address calculation
 ''',
 
 'add_imm_pcrel': '''
@@ -354,31 +362,32 @@ FUNCTIONS = {
 ''',
 
 'push': '''
-    let mut sp = arm.regs[REG_SP];
+    let reglist = op & 0xFF;
     let store_lr = (op & 0x0100) != 0;
+    let mut sp = arm.regs[REG_SP] - reglist.count_ones() * 4;
+    if store_lr { sp -= 4; }
+    arm.regs[REG_SP] = sp; // writeback
 
     for i in 0..8 {
-        if op & (1 << i) != 0 {
-            sp -= 4;
+        if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, sp);
             cycles += interconnect.write32(sp, arm.regs[i]);
+            sp += 4;
         }
     }
 
     if store_lr {
-        sp -= 4;
         check_watchpoint!(arm, sp);
         cycles += interconnect.write32(sp, arm.regs[REG_LR]);
     }
-
-    arm.regs[REG_SP] = sp;
 ''',
 'pop': '''
+    let reglist = op & 0xFF;
     let mut sp = arm.regs[REG_SP];
     let load_pc = (op & 0x0100) != 0;
 
     for i in 0..8 {
-        if op & (1 << i) != 0 {
+        if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, sp);
             arm.regs[i] = add_cycles!(cycles, interconnect.read32(sp));
             sp += 4;
