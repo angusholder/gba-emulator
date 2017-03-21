@@ -9,15 +9,12 @@ fn main() {
     let cur_dir = env::current_dir().expect("Can't access current working directory");
     let crate_dir = cur_dir.as_path();
 
-    // Make sure we rebuild is this build script changes.
-    // I guess that won't happen if you have non-UTF8 bytes in your path names.
-    // The `build.py` script prints out its own dependencies.
+    // Make sure we rebuild if any files in src change. Cargo doesn't detect changes to our Python
+    // scripts to ensure that happens here.
     println!("cargo:rerun-if-changed={}",
-             crate_dir.join("build.rs").to_string_lossy());
+             crate_dir.join("src").to_string_lossy());
 
-    // Scripts are in `$crate_dir/meta`.
-    let meta_dir = crate_dir.join("src");
-    let build_script = meta_dir.join("gen.py");
+    let build_script = crate_dir.join("src").join("gen.py");
 
     // Launch build script with Python. We'll just find python in the path.
     let status = process::Command::new("python3.6")
