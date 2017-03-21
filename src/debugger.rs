@@ -192,10 +192,10 @@ impl Debugger {
     fn disassemble(thumb_mode: bool, op: u32, op_addr: u32) {
         if thumb_mode {
             let dis = disassemble_thumb_opcode(op, op_addr);
-            println!("@{:08X}: ({:04X}): {}", op_addr, op, dis);
+            println!("0x{:07X}: ({:04X}) {}", op_addr, op, dis);
         } else {
             let dis = disassemble_arm_opcode(op, op_addr);
-            println!("@{:08X}: ({:08X}): {}", op_addr, op, dis);
+            println!("0x{:07X}: ({:08X}) {}", op_addr, op, dis);
         }
     }
 
@@ -276,7 +276,7 @@ impl Debugger {
 
                         println!("Stepping... {}", i);
                         Debugger::disassemble(thumb_mode, op, op_addr);
-                        println!("{:?}", self.arm);
+                        println!("{:?}\n", self.arm);
 
                         match event {
                             StepEvent::TriggerWatchpoint(addr) => {

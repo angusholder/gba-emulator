@@ -204,7 +204,7 @@ impl fmt::Debug for Arm7TDMI {
         for (i, r) in self.regs.iter().enumerate() {
             write!(f, "{}:{:08X} ", ARM_REGS[i], r)?;
         }
-        write!(f, "CPSR:{}\n\n", self.cpsr)
+        write!(f, "CPSR:{}", self.cpsr)
     }
 }
 
