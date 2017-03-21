@@ -153,6 +153,7 @@ pub struct Interconnect {
     interrupt_enable: IrqFlags,
     interrupt_flags: IrqFlags,
     lcd_control: LCDControl,
+    sound_bias: SoundPWMControl,
 }
 
 // Regions mirrored:
@@ -198,6 +199,10 @@ impl Interconnect {
             interrupt_enable: Default::default(),
             interrupt_flags: Default::default(),
             lcd_control: Default::default(),
+            sound_bias: SoundPWMControl {
+                bias_level: 0x200,
+                amplitude_resolution: 0,
+            }
         }
     }
 
@@ -592,6 +597,15 @@ impl_io_map! {
         }
     }
 
+    (u32, 0x88, sound_bias) {
+        read => |ic: &Interconnect| {
+            Into::<u32>::into(ic.sound_bias)
+        },
+        write => |ic: &mut Interconnect, value: u32| {
+            ic.sound_bias = value.into();
+        }
+    }
+
     (u16, 0x200, interrupt_enable) {
         read => |ic: &Interconnect| {
             Into::<u16>::into(ic.interrupt_enable)
@@ -691,6 +705,7 @@ pub struct IrqFlags: u16 {
     (13, 1) game_pak: bool,
 }
 
+#[derive(Clone, Copy)]
 pub struct WaitStateControl: u32 {
     (0, 2) sram_wait_control: usize,
     (2, 2) wait_state_0_non_seq: usize,
@@ -702,6 +717,12 @@ pub struct WaitStateControl: u32 {
     (11,2) phi_terminal_output: usize,
     (14,1) gamepak_prefetch_buffer: bool,
     (15,1) gamepak_type_flag: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct SoundPWMControl: u32 {
+    (0,10) bias_level: u16,
+    (14,2) amplitude_resolution: u8,
 }
 }
 
