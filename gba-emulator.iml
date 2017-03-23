@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <module type="RUST_MODULE" version="4">
+  <component name="FacetManager">
+    <facet type="Python" name="Python">
+      <configuration sdkName="Python 3.6.0 (C:\Program Files (x86)\Python36-32\python.exe)" />
+    </facet>
+  </component>
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$">
@@ -11,6 +16,7 @@
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Rust &lt;gba-emulator&gt;" level="project" />
+    <orderEntry type="library" name="Python 3.6.0 (C:\Program Files (x86)\Python36-32\python.exe) interpreter library" level="application" />
     <orderEntry type="library" name="Cargo &lt;gba-emulator&gt;" level="project" />
   </component>
 </module>
