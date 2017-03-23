@@ -23,9 +23,8 @@ ALU_OPS = {
 0b0010: (
     'lsl_reg', 'LSL Rd, Rs',
     '''
-    let result = rd << rs;
+    let result = barrel_shift_lsl_set_flags(arm, rd, rs);
     set_zn(arm, result);
-    arm.cpsr.c = ((rd >> (32 - rs)) & 1) != 0;
     arm.regs[rd_index] = result;
     cycles += 1;
 '''),
@@ -33,9 +32,8 @@ ALU_OPS = {
 0b0011: (
     'lsr_reg', 'LSR Rd, Rs',
     '''
-    let result = rd >> rs;
+    let result = barrel_shift_lsr_set_flags(arm, rd, rs);
     set_zn(arm, result);
-    arm.cpsr.c = ((rd >> (rs - 1)) & 1) != 0;
     arm.regs[rd_index] = result;
     cycles += 1;
 '''),
@@ -43,9 +41,8 @@ ALU_OPS = {
 0b0100: (
     'asr_reg', 'ASR Rd, Rs',
     '''
-    let result = ((rd as i32) >> rs) as u32;
+    let result = barrel_shift_asr_set_flags(arm, rd, rs);
     set_zn(arm, result);
-    arm.cpsr.c = ((rd >> (rs - 1)) & 1) != 0;
     arm.regs[rd_index] = result;
     cycles += 1;
 '''),
@@ -71,10 +68,10 @@ ALU_OPS = {
 0b0111: (
     'ror_reg', 'ROR Rd, Rs',
     '''
-    let result = rd.rotate_right(rs);
+    let result = barrel_shift_ror_set_flags(arm, rd, rs);
     set_zn(arm, result);
-    arm.cpsr.c = ((rd >> ((rs - 1) & 0x1F)) & 1) != 0;
     arm.regs[rd_index] = result;
+    cycles += 1;
 '''),
 
 0b1000: (
@@ -86,7 +83,7 @@ ALU_OPS = {
 0b1001: (
     'neg_reg', 'NEG Rd, Rs',
     '''
-    let result = -(rs as i32) as u32;
+    let result = (rs as i32).wrapping_neg() as u32;
     set_zn(arm, result);
     sub_set_vc(arm, 0, rs);
     arm.regs[rd_index] = result;
@@ -95,7 +92,7 @@ ALU_OPS = {
 0b1010: (
     'cmp_reg', 'CMP Rd, Rs',
     '''
-    let result = rd - rs;
+    let result = rd.wrapping_sub(rs);
     set_zn(arm, result);
     sub_set_vc(arm, rd, rs);
 '''),
@@ -119,7 +116,7 @@ ALU_OPS = {
 0b1101: (
     'mul_reg', 'MUL Rd, Rs',
     '''
-    let result = rd * rs;
+    let result = rd.wrapping_mul(rs);
     set_zn(arm, result);
     cycles += (rs.leading_zeros() / 8) as i32;
     // MUL sets c and v to meaningless values, so we don't need to touch them.
@@ -207,7 +204,7 @@ FUNCTIONS = {
 'lsl_imm': '''
     let rs = arm.regs[(op >> 3 & 7) as usize];
     let imm = (op >> 6 & 0x1F) as u32;
-    let result = rs << imm;
+    let result = barrel_shift_lsl_set_flags(arm, rs, imm);
     set_zn(arm, result);
     arm.regs[(op & 7) as usize] = result;
 ''',
@@ -215,7 +212,7 @@ FUNCTIONS = {
 'lsr_imm': '''
     let rs = arm.regs[(op >> 3 & 7) as usize];
     let imm = (op >> 6 & 0x1F) as u32;
-    let result = rs >> imm;
+    let result = barrel_shift_lsr_set_flags(arm, rs, imm);
     set_zn(arm, result);
     arm.regs[(op & 7) as usize] = result;
 ''',
@@ -223,7 +220,7 @@ FUNCTIONS = {
 'asr_imm':'''
     let rs = arm.regs[(op >> 3 & 7) as usize];
     let imm = (op >> 6 & 0x1F) as u32;
-    let result = ((rs as i32) >> imm) as u32;
+    let result = barrel_shift_asr_set_flags(arm, rs, imm);
     set_zn(arm, result);
     arm.regs[(op & 7) as usize] = result;
 ''',
@@ -240,7 +237,7 @@ FUNCTIONS = {
 'sub3_reg': '''
     let rs = arm.regs[(op >> 3 & 7) as usize];
     let rn = arm.regs[(op >> 6 & 7) as usize];
-    let result = rs - rn;
+    let result = rs.wrapping_sub(rn);
     set_zn(arm, result);
     sub_set_vc(arm, rs, rn);
     arm.regs[(op & 7) as usize] = result;

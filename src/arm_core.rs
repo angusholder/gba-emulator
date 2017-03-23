@@ -4,7 +4,9 @@ use std::cmp;
 
 use arm7tdmi::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
-use utils::{ Cycle, set_zn, add_set_vc, sub_set_vc };
+use utils::{ Cycle, set_zn, add_set_vc, sub_set_vc, barrel_shift_asr, barrel_shift_asr_set_flags,
+             barrel_shift_lsl, barrel_shift_lsl_set_flags, barrel_shift_lsr,
+             barrel_shift_lsr_set_flags, barrel_shift_ror, barrel_shift_ror_set_flags };
 use num::FromPrimitive;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
@@ -17,94 +19,6 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
 
     let discr = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
     ARM_LUT[discr as usize](arm, interconnect, op)
-}
-
-fn barrel_shift_lsl(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount >= 32 {
-        0
-    } else {
-        rm << shift_amount
-    }
-}
-fn barrel_shift_lsl_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount == 32 {
-        arm.cpsr.c = (rm & 1) != 0;
-        0
-    } else if shift_amount > 32 {
-        arm.cpsr.c = false;
-        0
-    } else {
-        if shift_amount != 0 {
-            arm.cpsr.c = ((rm >> (32 - shift_amount)) & 1) != 0;
-        }
-        rm << shift_amount
-    }
-}
-
-fn barrel_shift_lsr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount >= 32 || shift_amount == 0 {
-        0
-    } else {
-        rm >> shift_amount
-    }
-}
-fn barrel_shift_lsr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount == 32 || shift_amount == 0 {
-        arm.cpsr.c = (rm >> 31) != 0;
-        0
-    } else if shift_amount > 32 {
-        arm.cpsr.c = false;
-        0
-    } else {
-        arm.cpsr.c = ((rm >> (shift_amount - 1)) & 1) != 0;
-        rm >> shift_amount
-    }
-}
-
-fn barrel_shift_asr(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount >= 32 || shift_amount == 0 {
-        // Return sign extension of rm
-        if (rm >> 31) != 0 {
-            0xFFFF_FFFF
-        } else {
-            0
-        }
-    } else {
-        ((rm as i32) >> shift_amount) as u32
-    }
-}
-fn barrel_shift_asr_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount >= 32 || shift_amount == 0 { // Return sign extension of rm
-        if (rm >> 31) != 0 {
-            arm.cpsr.c = true;
-            0xFFFF_FFFF
-        } else {
-            arm.cpsr.c = false;
-            0
-        }
-    } else {
-        arm.cpsr.c = (((rm as i32) >> (shift_amount - 1)) & 1) != 0;
-        ((rm as i32) >> shift_amount) as u32
-    }
-}
-
-fn barrel_shift_ror(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount == 0 { // RRX
-        let carry_in = arm.cpsr.c as u32;
-        (rm >> 1) | (carry_in << 31)
-    } else {
-        rm.rotate_right(shift_amount)
-    }
-}
-fn barrel_shift_ror_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {
-    if shift_amount == 0 { // RRX
-        let carry_in = arm.cpsr.c as u32;
-        arm.cpsr.c = (rm & 1) != 0;
-        (rm >> 1) | (carry_in << 31)
-    } else {
-        arm.cpsr.c = ((rm >> ((shift_amount - 1) & 0x1F)) & 1) != 0;
-        rm.rotate_right(shift_amount)
-    }
 }
 
 type ArmOp = fn(&mut Arm7TDMI, &mut Interconnect, u32) -> StepEvent;

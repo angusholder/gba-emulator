@@ -4,7 +4,8 @@ use std::mem;
 
 use arm7tdmi::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
 use interconnect::Interconnect;
-use utils::{ Cycle, set_zn, add_set_vc, sub_set_vc, sign_extend };
+use utils::{ Cycle, set_zn, add_set_vc, sub_set_vc, sign_extend, barrel_shift_ror_set_flags,
+             barrel_shift_lsr_set_flags, barrel_shift_asr_set_flags, barrel_shift_lsl_set_flags };
 
 pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
     debug_assert!(arm.regs[REG_PC] & 1 == 0);

@@ -375,14 +375,14 @@ def decode(i):
         let high = arm.regs[rd_hi_index] as i32 as i64;
         let c = low | (high << 32);
         cycles += 1;
-        (a * b + c) as u64
+        a.wrapping_mul(b).wrapping_add(c) as u64
     }'''
             else:
                 result = '''{
         let a = arm.regs[rm_index] as i32 as i64;
         let b = arm.regs[rs_index] as i32 as i64;
 
-        (a * b) as u64
+        a.wrapping_mul(b) as u64
     }'''
 
         fn_body = f'''\
@@ -433,7 +433,7 @@ def decode(i):
             offset = get_second_operand(False, False, i)
 
         if not up:
-            offset = f'-(({offset}) as i32) as u32'
+            offset = f'(({offset}) as i32).wrapping_neg() as u32'
 
         addr = 'rn.wrapping_add(offset)' if preindex else 'rn'
 
