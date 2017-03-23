@@ -4,9 +4,8 @@ use std::cmp;
 
 use arm7tdmi::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
-use utils::{ Cycle, set_zn, add_set_vc, sub_set_vc, barrel_shift_asr, barrel_shift_asr_set_flags,
-             barrel_shift_lsl, barrel_shift_lsl_set_flags, barrel_shift_lsr,
-             barrel_shift_lsr_set_flags, barrel_shift_ror, barrel_shift_ror_set_flags };
+use utils::Cycle;
+use core_common::*;
 use num::FromPrimitive;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
