@@ -103,6 +103,142 @@ BARREL_SHIFT_OPS = {
     0b11: 'ror',
 }
 
+LDM = {
+# (up, preindex)
+(True, False): ('ldmia', '''
+    for i in 0..15 { // Post-increment
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        let target = add_cycles!(cycles, interconnect.read32(addr));
+        arm.branch_to(interconnect, target);
+        addr += 4;
+    }\
+'''),
+(True, True): ('ldmib', '''
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            addr += 4;
+            check_watchpoint!(arm, addr);
+            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        addr += 4;
+        check_watchpoint!(arm, addr);
+        let target = add_cycles!(cycles, interconnect.read32(addr));
+        arm.branch_to(interconnect, target);
+    }\
+'''),
+(False, False): ('ldmda', '''
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4 + 4;
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        let target = add_cycles!(cycles, interconnect.read32(addr));
+        arm.branch_to(interconnect, target);
+    }
+    addr = new_base;\
+'''),
+(False, True): ('ldmdb', '''
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4;
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        let target = add_cycles!(cycles, interconnect.read32(addr));
+        arm.branch_to(interconnect, target);
+    }
+    addr = new_base;\
+''')
+}
+
+STM = {
+# (up, preindex)
+(True, False): ('stmia', '''
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            cycles += interconnect.write32(addr, arm.regs[i]);
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        // address of current instruction + 12 is stored
+        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+        addr += 4;
+    }\
+'''),
+(True, True): ('stmib', '''
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            addr += 4;
+            check_watchpoint!(arm, addr);
+            cycles += interconnect.write32(addr, arm.regs[i]);
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        addr += 4;
+        check_watchpoint!(arm, addr);
+        // address of current instruction + 12 is stored
+        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+    }\
+'''),
+(False, False): ('stmda', '''
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4 + 4;
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            cycles += interconnect.write32(addr, arm.regs[i]);
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        // address of current instruction + 12 is stored
+        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+    }
+    addr = new_base;\
+'''),
+(False, True): ('stmdb', '''
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4;
+    for i in 0..15 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            cycles += interconnect.write32(addr, arm.regs[i]);
+            addr += 4;
+        }
+    }
+    if reglist & (1 << REG_PC) != 0 {
+        check_watchpoint!(arm, addr);
+        // address of current instruction + 12 is stored
+        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+    }
+    addr = new_base;\
+''')
+}
+
 def get_second_operand(I, set_cc, discriminant):
     if I:
         return '''{
@@ -132,7 +268,7 @@ def get_second_operand(I, set_cc, discriminant):
     }}\
 '''
 
-def emit_data_processing(imm, discr, ins_name):
+def emit_data_processing(imm, discr):
     opcode = (i >> 5) & 0xF
     set_cc = i & 0x010 != 0
     if opcode in (TST, TEQ, CMP, CMN):
@@ -456,7 +592,7 @@ let value = {operation};
             ins_name += '_reg'
         else:
             ins_name += '_imm'
-        fn_body = emit_data_processing(False, i, ins_name)
+        fn_body = emit_data_processing(False, i)
     # Data Processing (immediate)
     if match(i, '001XXXXxXXXX') and (set_cc or not is_test_ins):
         assert not ins_name
@@ -464,7 +600,7 @@ let value = {operation};
         set_cc = i & 0x010 != 0
         assert OPCODES[opcode][set_cc] is not None
         ins_name = OPCODES[opcode][set_cc] + '_imm'
-        fn_body = emit_data_processing(True, i, ins_name)
+        fn_body = emit_data_processing(True, i)
 
     # SWI
     if match(i, '1111xxxxxxxx'):
@@ -484,8 +620,32 @@ let value = {operation};
     # Block Data Transfer
     if match(i, '100xxxxxXXXX'):
         assert not ins_name
-        load = i & 0x010 != 0
-        ins_name = 'ldm' if load else 'stm'
+        load = ((i >> 4) & 1) != 0
+        writeback = ((i >> 5) & 1) != 0
+        # set_cc = ((i >> 6) & 1) != 0
+        up = ((i >> 7) & 1) != 0
+        preindex = ((i >> 8) & 1) != 0
+
+        if load:
+            (ins_name, fn_body) = LDM[(up, preindex)]
+        else:
+            (ins_name, fn_body) = STM[(up, preindex)]
+
+        if writeback:
+            fn_body += '    arm.regs[rn_index] = addr;'
+            ins_name += '_wb'
+
+        fn_body = f'''\
+    let rn_index = (op >> 16 & 0xF) as usize;
+    let set_cc = op >> 22 & 1 != 0;
+    let reglist = op & 0xFFFF;
+
+    if set_cc {{
+        panic!("{ins_name} set_cc is unimplemented");
+    }}
+
+    let mut addr = arm.regs[rn_index];
+    {fn_body}'''
 
     # MRS (PSR to register)
     if match(i, '00010x000000'):
