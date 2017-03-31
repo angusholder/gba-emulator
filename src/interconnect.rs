@@ -54,6 +54,8 @@ const PALETTE_TIMING_U32: Cycle = Cycle(2);
 
 const GAMEPAK_PAGE_SIZE: u32 = 128*1024;
 const GAMEPAK_PAGE_MASK: u32 = GAMEPAK_PAGE_SIZE - 1;
+const GAMEPAK_MAX_SIZE: u32 = 32 * 1024 * 1024;
+const GAMEPAK_MAX_SIZE_MASK: u32 = GAMEPAK_MAX_SIZE - 1;
 
 const CODE_SEGMENT_BASE_INVALID: u32 = 0x10_0000;
 const CODE_SEGMENT_SIZE_INVALID: u32 = 0;
@@ -165,7 +167,7 @@ pub struct Interconnect {
 
 // TODO: Handle misaligned reads/writes
 impl Interconnect {
-    pub fn new(bios: &[u8]) -> Interconnect {
+    pub fn new(bios: &[u8], game: &[u8]) -> Interconnect {
         Interconnect {
             prefetch: Default::default(),
 
@@ -183,7 +185,7 @@ impl Interconnect {
             io_cache: Buffer::with_capacity(0x804),
             palette_cache: Buffer::with_capacity(PALETTE_SIZE),
             oam_cache: Buffer::with_capacity(OAM_SIZE),
-            gamepak: Buffer::with_capacity(0),
+            gamepak: Buffer::new(game),
 
             sram_wait_control: Cycle(4),
             gamepak_wait_states: [
@@ -430,9 +432,31 @@ impl Interconnect {
         (cycles, read)
     }
 
-    fn gamepak_read16(&mut self, _addr: u32) -> (Cycle, u16) {
-        unimplemented!();
-        //self.gamepak_next_seq_addr = (addr + 2) & !1;
+    fn gamepak_read16(&mut self, addr: u32) -> (Cycle, u16) {
+        let seq = self.gamepak_next_seq_addr == addr;
+        let upper = addr >> 24;
+        debug_assert!(0x8 <= upper && upper <= 0xD);
+        debug_assert!(addr & 1 == 0);
+
+        let cycle = match upper {
+            0x8 | 0x9 if seq => self.gamepak_wait_states[0].seq,
+            0xA | 0xB if seq => self.gamepak_wait_states[1].seq,
+            0xC | 0xD if seq => self.gamepak_wait_states[2].seq,
+            0x8 | 0x9 if !seq => self.gamepak_wait_states[0].non_seq,
+            0xA | 0xB if !seq => self.gamepak_wait_states[1].non_seq,
+            0xC | 0xD if !seq => self.gamepak_wait_states[2].non_seq,
+            _ => unreachable!(),
+        };
+
+        let addr = addr & GAMEPAK_MAX_SIZE_MASK;
+        let read = if (addr as usize) < self.gamepak.len() {
+            self.gamepak.read16(addr & GAMEPAK_MAX_SIZE_MASK)
+        } else {
+            (addr >> 1 & 0xFFFF) as u16
+        };
+        self.gamepak_next_seq_addr = (addr + 2) & !1;
+
+        (cycle, read)
     }
 
     fn gamepak_read32(&mut self, addr: u32) -> (Cycle, u32) {
