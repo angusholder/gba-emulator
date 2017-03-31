@@ -395,7 +395,7 @@ FUNCTIONS = {
         check_watchpoint!(arm, sp);
         let addr = add_cycles!(cycles, interconnect.read32(sp));
         sp += 4;
-        arm.branch_to(interconnect, addr);
+        arm.branch_to(interconnect, addr & !1);
     }
 
     arm.regs[REG_SP] = sp;
