@@ -63,8 +63,8 @@ impl fmt::Display for ConditionCode {
 }
 
 impl OperatingMode {
-    pub fn is_privileged(self) -> bool {
-        self != OperatingMode::User
+    pub fn is_privileged(&self) -> bool {
+        *self != OperatingMode::User
     }
 }
 
@@ -432,9 +432,9 @@ impl Arm7TDMI {
 
         interconnect.prefetch[0] = interconnect.prefetch[1];
         let next_op = if self.cpsr.thumb_mode {
-            interconnect.exec_thumb_slow(self.regs[REG_PC]).1 as u32
+            add_cycles!(self.cycles, interconnect.exec_thumb_slow(self.regs[REG_PC])) as u32
         } else {
-            interconnect.exec_arm_slow(self.regs[REG_PC]).1
+            add_cycles!(self.cycles, interconnect.exec_arm_slow(self.regs[REG_PC]))
         };
 
         interconnect.prefetch[1] = PrefetchValue {
