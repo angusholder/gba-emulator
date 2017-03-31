@@ -471,7 +471,7 @@ pub fn disassemble_thumb_opcode(op: u32, pc: u32) -> String {
         0x1C | 0x1D => format!("ADD R{}, R{}, #{}", op & 7, op >> 3 & 7, op >> 6 & 7),
         0x1E | 0x1F => format!("SUB R{}, R{}, #{}", op & 7, op >> 3 & 7, op >> 6 & 7),
 
-        0x20 ... 0x27 => format!("MOV R{}, #{}", op >> 8 & 7, op & 0xFF),
+        0x20 ... 0x27 => format!("MOV R{}, #{} ; 0x{:X}", op >> 8 & 7, op & 0xFF, op & 0xFF),
         0x28 ... 0x2F => format!("CMP R{}, #{}", op >> 8 & 7, op & 0xFF),
         0x30 ... 0x37 => format!("ADD R{}, #{}", op >> 8 & 7, op & 0xFF),
         0x38 ... 0x3F => format!("SUB R{}, #{}", op >> 8 & 7, op & 0xFF),

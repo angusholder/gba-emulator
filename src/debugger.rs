@@ -271,11 +271,12 @@ impl Debugger {
                 }
 
                 State::Stepping(n) => {
+                    use interconnect::PrefetchValue;
                     'step_loop: for i in 0..n {
-                        let StepInfo { op, op_addr, thumb_mode, event } = self.arm.step(&mut self.interconnect);
-
                         println!("Stepping... {}", i);
-                        Debugger::disassemble(thumb_mode, op, op_addr);
+                        let PrefetchValue { op, addr } = self.interconnect.prefetch[0];
+                        Debugger::disassemble(self.arm.cpsr.thumb_mode, op, addr);
+                        let StepInfo { event, .. } = self.arm.step(&mut self.interconnect);
                         println!("{:?}\n", self.arm);
 
                         match event {
