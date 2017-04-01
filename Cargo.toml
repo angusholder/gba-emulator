@@ -4,9 +4,7 @@ version = "0.1.0"
 authors = ["Angus Holder <aholder97@gmail.com>"]
 build = "build.rs"
 
-[dependencies.num]
-version = "*"
-default-features = false
-
-[dependencies.enum_primitive]
-version = "0.1.1"
+[dependencies]
+bitflags = "0.8.2"
+enum_primitive = "0.1.1"
+num = {version = "*", default-features = false}
