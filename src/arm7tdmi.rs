@@ -416,6 +416,7 @@ impl Arm7TDMI {
 
         let PrefetchValue { op, addr } = interconnect.prefetch[0];
 
+        let last_cycles = self.cycles;
         let last_thumb_mode = self.cpsr.thumb_mode;
 
         if self.breakpoints.contains(addr) {
@@ -447,6 +448,12 @@ impl Arm7TDMI {
         } else {
             step_arm(self, interconnect, op)
         };
+
+        let cycles = self.cycles - last_cycles;
+        let trigger_irq = interconnect.step_cycles(cycles);
+        if trigger_irq && !self.cpsr.irq_disable {
+            self.signal_irq(interconnect);
+        }
 
         StepInfo {
             op: op,

@@ -3,6 +3,8 @@
 extern crate num;
 #[macro_use]
 extern crate enum_primitive;
+#[macro_use]
+extern crate bitflags;
 
 #[macro_use]
 mod utils;
@@ -14,6 +16,7 @@ mod thumb_core;
 mod arm_core;
 mod disassemble;
 mod debugger;
+mod renderer;
 
 use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;
