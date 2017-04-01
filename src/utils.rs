@@ -69,7 +69,7 @@ macro_rules! unpacked_bitfield_struct {
         impl From<$packed_type> for $unpacked_type {
             fn from(n: $packed_type) -> Self {
                 $unpacked_type { $(
-                    $field_name: convert!(
+                    $field_name: unpack!(
                         $field_type,
                         ((1 << $width) - 1) & (n >> $start)
                     )
@@ -79,7 +79,7 @@ macro_rules! unpacked_bitfield_struct {
 
         impl From<$unpacked_type> for $packed_type {
             fn from(s: $unpacked_type) -> Self {
-                $((s.$field_name as $packed_type) << $start)|+
+                $(to_primitive!($packed_type, $field_type, s.$field_name) << $start)|+
             }
         }
     )+ };
