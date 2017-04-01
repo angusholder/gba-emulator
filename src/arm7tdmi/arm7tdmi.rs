@@ -396,8 +396,8 @@ impl Arm7TDMI {
     }
 
     pub fn step(&mut self, interconnect: &mut Interconnect) -> StepEvent {
-        use thumb_core::step_thumb;
-        use arm_core::step_arm;
+        use super::thumb_core::step_thumb;
+        use super::arm_core::step_arm;
 
         let op = interconnect.prefetch[0];
         let addr = self.current_pc();

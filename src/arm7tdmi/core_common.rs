@@ -1,4 +1,5 @@
-use arm7tdmi::Arm7TDMI;
+use super::Arm7TDMI;
+pub use utils::sign_extend;
 
 macro_rules! check_watchpoint {
     ($arm:expr, $addr:expr) => {
@@ -24,12 +25,6 @@ pub fn add_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32) {
 pub fn sub_set_vc(arm: &mut Arm7TDMI, a: u32, b: u32) {
     arm.cpsr.v = (a as i32).overflowing_sub(b as i32).1;
     arm.cpsr.c = a.overflowing_sub(b).1;
-}
-
-#[inline(always)]
-pub fn sign_extend(n: u32, n_bits: usize) -> u32 {
-    let shift = 32 - n_bits;
-    (((n << shift) as i32) >> shift) as u32
 }
 
 pub fn barrel_shift_lsl(_arm: &mut Arm7TDMI, rm: u32, shift_amount: u32) -> u32 {

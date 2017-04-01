@@ -1,7 +1,6 @@
 use std::ptr;
 
-use utils::{ Buffer, Cycle };
-use core_common::sign_extend;
+use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
 
 const ROM_START: u32 = 0x0000_0000;

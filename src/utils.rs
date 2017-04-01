@@ -491,3 +491,9 @@ impl SubAssign<i32> for Cycle {
         self.0 -= right;
     }
 }
+
+#[inline(always)]
+pub fn sign_extend(n: u32, n_bits: usize) -> u32 {
+    let shift = 32 - n_bits;
+    (((n << shift) as i32) >> shift) as u32
+}

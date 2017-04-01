@@ -8,12 +8,8 @@ extern crate bitflags;
 
 #[macro_use]
 mod utils;
-#[macro_use]
-mod core_common;
 mod arm7tdmi;
 mod interconnect;
-mod thumb_core;
-mod arm_core;
 mod disassemble;
 mod debugger;
 mod renderer;

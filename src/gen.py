@@ -1,8 +1,7 @@
 import argparse
 import os
 
-import arm_core_gen
-import thumb_core_gen
+from arm7tdmi import arm_core_gen, thumb_core_gen
 
 parser = argparse.ArgumentParser(description='Generate sources for CPU cores.')
 parser.add_argument('--out-dir', help='set output directory')

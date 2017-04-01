@@ -2,10 +2,10 @@
 
 use std::mem;
 
-use arm7tdmi::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
+use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
 use interconnect::Interconnect;
 use utils::Cycle;
-use core_common::*;
+use super::core_common::*;
 
 pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
     debug_assert!(arm.regs[REG_PC] & 1 == 0);

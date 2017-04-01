@@ -2,10 +2,10 @@
 
 use std::cmp;
 
-use arm7tdmi::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
+use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
 use utils::Cycle;
-use core_common::*;
+use super::core_common::*;
 use num::FromPrimitive;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
