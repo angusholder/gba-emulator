@@ -50,21 +50,6 @@ macro_rules! unhandled_write {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct PrefetchValue {
-    pub op: u32,
-    pub addr: u32,
-}
-
-impl Default for PrefetchValue {
-    fn default() -> PrefetchValue {
-        PrefetchValue {
-            op: 0xDEADBEEF,
-            addr: 0xDEADBEEF,
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Type {
     U8,
@@ -100,7 +85,7 @@ impl WaitState {
 
 #[derive(Clone)]
 pub struct Interconnect {
-    pub prefetch: [PrefetchValue; 2],
+    pub prefetch: [u32; 2],
 
     // The code segment tracks the region of memory the PC is currently in, allowing the fast path
     // of instruction fetching to be a simple bounds check then pointer load, falling back to the
@@ -462,11 +447,10 @@ impl Interconnect {
     pub fn exec_thumb_fast(&mut self, addr: u32) -> Option<(Cycle, u16)> {
         let offset = addr.wrapping_sub(self.code_segment_base);
         if offset < self.code_segment_size {
-            let next_op = self.prefetch[0].op as u16;
+            let next_op = self.prefetch[0] as u16;
             self.prefetch[0] = self.prefetch[1];
-            self.prefetch[1] = PrefetchValue {
-                addr: addr,
-                op: unsafe { *(self.code_segment_ptr.offset(offset as isize) as *const u16) } as u32,
+            self.prefetch[1] = unsafe {
+                *(self.code_segment_ptr.offset(offset as isize) as *const u16) as u32
             };
             Some((self.code_segment_timing_u16, next_op))
         } else {
@@ -485,11 +469,10 @@ impl Interconnect {
     pub fn exec_arm_fast(&mut self, addr: u32) -> Option<(Cycle, u32)> {
         let offset = addr.wrapping_sub(self.code_segment_base);
         if offset < self.code_segment_size {
-            let next_op = self.prefetch[0].op;
+            let next_op = self.prefetch[0];
             self.prefetch[0] = self.prefetch[1];
-            self.prefetch[1] = PrefetchValue {
-                addr: addr,
-                op: unsafe { *(self.code_segment_ptr.offset(offset as isize) as *const u32) },
+            self.prefetch[1] = unsafe {
+                *(self.code_segment_ptr.offset(offset as isize) as *const u32)
             };
             Some((self.code_segment_timing_u32, next_op))
         } else {

@@ -4,11 +4,11 @@ use std::io;
 use std::fmt;
 use std::io::Write;
 use std::sync::mpsc;
-use std::collections::HashMap;
+use std::collections::{ HashMap, HashSet };
 
 use num::Num;
 
-use arm7tdmi::{ StepInfo, StepEvent, Arm7TDMI };
+use arm7tdmi::{ StepEvent, Arm7TDMI };
 use interconnect::Interconnect;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 
@@ -106,10 +106,12 @@ impl fmt::Display for CommandError {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
     AddBreakpoint(u32),
+    AddTempBreakpoint(u32),
     DelBreakpoint(u32),
     ListBreakpoints,
 
     AddWatchpoint(u32),
+    AddTempWatchpoint(u32),
     DelWatchpoint(u32),
     ListWatchpoints,
 
@@ -134,10 +136,12 @@ pub enum Command {
 
 commands! {
     "b" | "break" => (n: int) = Command::AddBreakpoint(n),
+    "tb" | "tbreak" => (n: int) = Command::AddTempBreakpoint(n),
     "delbreak" => (n: int) = Command::DelBreakpoint(n),
     "lbreak" => () = Command::ListBreakpoints,
 
     "w" | "watch" => (n: int) = Command::AddWatchpoint(n),
+    "tw" | "twatch" => (n: int) = Command::AddTempWatchpoint(n),
     "delwatch" => (n: int) = Command::DelWatchpoint(n),
     "lwatch" => () = Command::ListWatchpoints,
 
@@ -178,6 +182,8 @@ pub struct Debugger {
     arm: Arm7TDMI,
     interconnect: Interconnect,
     save_states: HashMap<String, EmulationState>,
+    temp_breakpoints: HashSet<u32>,
+    temp_watchpoints: HashSet<u32>,
 }
 
 impl Debugger {
@@ -186,27 +192,52 @@ impl Debugger {
             arm: arm,
             interconnect: interconnect,
             save_states: HashMap::new(),
+            temp_breakpoints: HashSet::new(),
+            temp_watchpoints: HashSet::new(),
         }
     }
 
-    fn disassemble(thumb_mode: bool, op: u32, op_addr: u32) {
+    fn dis(&mut self) {
+        let thumb_mode = self.arm.cpsr.thumb_mode;
+        let addr = self.arm.current_pc();
         if thumb_mode {
-            let dis = disassemble_thumb_opcode(op, op_addr);
-            println!("0x{:07X}: ({:04X}) {}", op_addr, op, dis);
+            let (_, op) = self.interconnect.exec_thumb_slow(addr);
+            let dis = disassemble_thumb_opcode(op as u32, addr);
+            println!("0x{:07X}: ({:04X}) {}", addr, op, dis);
         } else {
-            let dis = disassemble_arm_opcode(op, op_addr);
-            println!("0x{:07X}: ({:08X}) {}", op_addr, op, dis);
-        }
-    }
-
-    fn disassemble_at(&mut self, thumb_mode: bool, addr: u32) {
-        let op = if thumb_mode {
-            self.interconnect.exec_thumb_slow(addr).1 as u32
-        } else {
-            self.interconnect.exec_arm_slow(addr).1
+            let (_, op) = self.interconnect.exec_arm_slow(addr);
+            let dis = disassemble_arm_opcode(op, addr);
+            println!("0x{:07X}: ({:08X}) {}", addr, op, dis);
         };
 
-        Debugger::disassemble(thumb_mode, op, addr);
+    }
+
+    fn step(&mut self, print_state: bool) -> bool {
+        let event = self.arm.step(&mut self.interconnect);
+        if print_state {
+            println!("{:?}\n", self.arm);
+        }
+        match event {
+            StepEvent::TriggerWatchpoint(addr) => {
+                println!("Watchpoint triggered at {:06X}", addr);
+                if self.temp_watchpoints.contains(&addr) {
+                    self.temp_watchpoints.remove(&addr);
+                    self.arm.watchpoints.remove(addr);
+                }
+                true
+            }
+            StepEvent::TriggerBreakpoint(addr) => {
+                println!("Breakpoint triggered at {:06X}", addr);
+                if self.temp_breakpoints.contains(&addr) {
+                    self.temp_breakpoints.remove(&addr);
+                    self.arm.breakpoints.remove(addr);
+                }
+                true
+            }
+            StepEvent::None => {
+                false
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -228,20 +259,28 @@ impl Debugger {
             }
         }).expect("failed to spawn thread");
 
+        let mut last_cmd: Option<Command> = None;
+
         loop {
             match state {
                 State::Paused => {
                     while state == State::Paused {
                         print!(">> ");
                         io::stdout().flush().unwrap();
-                        let cmd = rx.recv().unwrap();
-                        match cmd {
-                            Err(CommandError::NoInput) => continue,
+
+                        match rx.recv().unwrap() {
+                            Err(CommandError::NoInput) => {
+                                if let Some(cmd) = last_cmd.take() {
+                                    self.execute_command(cmd.clone());
+                                    last_cmd = Some(cmd);
+                                }
+                            }
                             Err(error) => {
                                 println!("Error: {}", error);
                             }
                             Ok(cmd) => {
-                                state = self.execute_command(cmd);
+                                state = self.execute_command(cmd.clone());
+                                last_cmd = Some(cmd);
                             }
                         }
                     }
@@ -249,46 +288,20 @@ impl Debugger {
 
                 State::Running => {
                     loop {
-                        let StepInfo { op, op_addr, thumb_mode, event } = self.arm.step(&mut self.interconnect);
-                        match event {
-                            StepEvent::TriggerWatchpoint(addr) => {
-                                println!("Watchpoint triggered at {:06X}", addr);
-                                state = State::Paused;
-                                break;
-                            }
-                            StepEvent::TriggerBreakpoint(addr) => {
-                                println!("Breakpoint triggered at {:06X}", addr);
-                                state = State::Paused;
-
-                                Debugger::disassemble(thumb_mode, op, op_addr);
-                                println!("{:?}", self.arm);
-
-                                break;
-                            }
-                            StepEvent::None => {}
+                        if self.step(false) {
+                            self.dis();
+                            state = State::Paused;
+                            break;
                         }
                     }
                 }
 
                 State::Stepping(n) => {
-                    use interconnect::PrefetchValue;
-                    'step_loop: for i in 0..n {
+                    for i in 1..n+1 {
                         println!("Stepping... {}", i);
-                        let PrefetchValue { op, addr } = self.interconnect.prefetch[0];
-                        Debugger::disassemble(self.arm.cpsr.thumb_mode, op, addr);
-                        let StepInfo { event, .. } = self.arm.step(&mut self.interconnect);
-                        println!("{:?}\n", self.arm);
-
-                        match event {
-                            StepEvent::TriggerWatchpoint(addr) => {
-                                println!("Watchpoint triggered at {:06X}", addr);
-                                break 'step_loop;
-                            }
-                            StepEvent::TriggerBreakpoint(addr) => {
-                                println!("Breakpoint triggered at {:06X}", addr);
-                                break 'step_loop;
-                            }
-                            StepEvent::None => {}
+                        self.dis();
+                        if self.step(true) {
+                            break;
                         }
                     }
 
@@ -306,25 +319,33 @@ impl Debugger {
             AddBreakpoint(addr) => {
                 self.arm.breakpoints.insert(addr);
             }
+            AddTempBreakpoint(addr) => {
+                self.arm.breakpoints.insert(addr);
+                self.temp_breakpoints.insert(addr);
+            }
             DelBreakpoint(addr) => {
                 self.arm.breakpoints.remove(addr);
             }
             AddWatchpoint(addr) => {
                 self.arm.watchpoints.insert(addr);
             }
+            AddTempWatchpoint(addr) => {
+                self.arm.watchpoints.insert(addr);
+                self.temp_watchpoints.insert(addr);
+            }
             DelWatchpoint(addr) => {
                 self.arm.watchpoints.remove(addr);
             }
 
             ListBreakpoints => {
-                for b in self.arm.breakpoints.iter() {
-                    println!("{:06X}", b);
+                for (i, b) in self.arm.breakpoints.iter().enumerate() {
+                    println!("  {}: {:06X}", i, b);
                 }
             }
 
             ListWatchpoints => {
-                for w in self.arm.watchpoints.iter() {
-                    println!("{:06X}", w);
+                for (i, w) in self.arm.watchpoints.iter().enumerate() {
+                    println!("  {}: {:06X}", i, w);
                 }
             }
 
@@ -345,9 +366,11 @@ impl Debugger {
                 });
             }
             RestoreState(name) => {
-                if let Some(state) = self.save_states.get(&name) {
-                    self.arm = state.arm.clone();
-                    self.interconnect = state.interconnect.clone();
+                if let Some(mut state) = self.save_states.get(&name).cloned() {
+                    state.arm.watchpoints = self.arm.watchpoints.clone();
+                    state.arm.breakpoints = self.arm.breakpoints.clone();
+                    self.arm = state.arm;
+                    self.interconnect = state.interconnect;
                 } else {
                     println!("No save state exists named '{}'", name);
                 }

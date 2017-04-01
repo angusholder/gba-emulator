@@ -1,7 +1,7 @@
 use std::fmt;
 
 use num::FromPrimitive;
-use interconnect::{ PrefetchValue, Interconnect };
+use interconnect::Interconnect;
 use utils::{ OrderedSet, Cycle };
 
 enum_from_primitive! {
@@ -155,13 +155,6 @@ pub enum StepEvent {
     None,
     TriggerBreakpoint(u32),
     TriggerWatchpoint(u32),
-}
-
-pub struct StepInfo {
-    pub op: u32,
-    pub op_addr: u32,
-    pub thumb_mode: bool,
-    pub event: StepEvent,
 }
 
 pub const REG_SP: usize = 13;
@@ -330,25 +323,13 @@ impl Arm7TDMI {
         let mut cycles = Cycle(0);
         if self.cpsr.thumb_mode {
             debug_assert!(addr & 1 == 0);
-            interconnect.prefetch[0] = PrefetchValue {
-                op: add_cycles!(cycles, interconnect.exec_thumb_slow(addr)) as u32,
-                addr: addr,
-            };
-            interconnect.prefetch[1] = PrefetchValue {
-                op: add_cycles!(cycles, interconnect.exec_thumb_slow(addr + step)) as u32,
-                addr: addr + step,
-            };
+            interconnect.prefetch[0] = add_cycles!(cycles, interconnect.exec_thumb_slow(addr)) as u32;
+            interconnect.prefetch[1] = add_cycles!(cycles, interconnect.exec_thumb_slow(addr + step)) as u32;
             self.regs[REG_PC] = addr + step;
         } else {
             debug_assert!(addr & 3 == 0);
-            interconnect.prefetch[0] = PrefetchValue {
-                op: add_cycles!(cycles, interconnect.exec_arm_slow(addr)),
-                addr: addr,
-            };
-            interconnect.prefetch[1] = PrefetchValue {
-                op: add_cycles!(cycles, interconnect.exec_arm_slow(addr + step)),
-                addr: addr + step,
-            };
+            interconnect.prefetch[0] = add_cycles!(cycles, interconnect.exec_arm_slow(addr));
+            interconnect.prefetch[1] = add_cycles!(cycles, interconnect.exec_arm_slow(addr + step));
             self.regs[REG_PC] = addr + step;
         }
         self.cycles += cycles;
@@ -410,22 +391,21 @@ impl Arm7TDMI {
         self.branch_to(interconnect, INTVEC_IRQ);
     }
 
-    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepInfo {
+    pub fn current_pc(&self) -> u32 {
+        self.regs[REG_PC] - self.get_op_size()
+    }
+
+    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepEvent {
         use thumb_core::step_thumb;
         use arm_core::step_arm;
 
-        let PrefetchValue { op, addr } = interconnect.prefetch[0];
+        let op = interconnect.prefetch[0];
+        let addr = self.current_pc();
 
         let last_cycles = self.cycles;
-        let last_thumb_mode = self.cpsr.thumb_mode;
 
         if self.breakpoints.contains(addr) {
-            return StepInfo {
-                op: op,
-                op_addr: addr,
-                thumb_mode: last_thumb_mode,
-                event: StepEvent::TriggerBreakpoint(addr)
-            };
+            return StepEvent::TriggerBreakpoint(addr);
         }
 
         let step = self.get_op_size();
@@ -438,10 +418,7 @@ impl Arm7TDMI {
             add_cycles!(self.cycles, interconnect.exec_arm_slow(self.regs[REG_PC]))
         };
 
-        interconnect.prefetch[1] = PrefetchValue {
-            op: next_op,
-            addr: self.regs[REG_PC],
-        };
+        interconnect.prefetch[1] = next_op;
 
         let event = if self.cpsr.thumb_mode {
             step_thumb(self, interconnect, op as u16)
@@ -455,11 +432,6 @@ impl Arm7TDMI {
             self.signal_irq(interconnect);
         }
 
-        StepInfo {
-            op: op,
-            op_addr: addr,
-            thumb_mode: last_thumb_mode,
-            event: event
-        }
+        event
     }
 }
