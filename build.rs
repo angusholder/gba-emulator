@@ -16,8 +16,15 @@ fn main() {
 
     let build_script = crate_dir.join("src").join("gen.py");
 
-    // Launch build script with Python. We'll just find python in the path.
-    let status = process::Command::new("python3.6")
+    let python = if cfg!(target_os = "linux") {
+        "python3.6"
+    } else if cfg!(target_os = "windows") {
+        "python"
+    } else {
+        unreachable!();
+    };
+
+    let status = process::Command::new(python)
         .current_dir(crate_dir)
         .arg(build_script)
         .arg("--out-dir")
