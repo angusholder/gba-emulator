@@ -1,5 +1,5 @@
 use std::cmp::Ord;
-use std::ops::{ Add, AddAssign };
+use std::ops::{ Add, AddAssign, Sub, SubAssign };
 
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
@@ -124,20 +124,23 @@ macro_rules! read_io_method {
             use std::cmp;
             let mut result: $io_type = 0;
             let mut bytes_handled = 0;
-            let addr = addr & 0xFFF;
+            debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
                 let mask: u32 = !(type_size - 1);
                 if (addr & mask) == ($case_addr & mask) {
                     bytes_handled += size!($T);
+                    // May be unused by foo!()
                     let _offset = $case_addr&!mask | addr&!mask;
-                    result |= foo!(from: $T, to: $io_type, $getter(self), _offset);
+                    let value = $getter(self);
+                    result |= foo!(from: $T, to: $io_type, value, _offset);
+                    println!("Reading 0x{:X} from {} (0x{:X})", value, stringify!($case_addr), $case_addr);
                 }
             })+
 
             if bytes_handled < size!($io_type) {
-                println!("WARNING: Unhandled ioread{} at 0x0400_0{:03X}", 8*size!($io_type), addr);
+                println!("WARNING: Unhandled ioread{} at 0x400_0{:03X}", 8*size!($io_type), addr & 0xFFF);
             }
 
             result
@@ -150,30 +153,29 @@ macro_rules! write_io_method {
         fn $fn_name(&mut self, addr: u32, value: $io_type) {
             use std::cmp;
             let mut bytes_handled = 0;
-            let addr = addr & 0xFFF;
+            debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
             $({
                 let type_size = cmp::max(size!($T), size!($io_type));
                 let mask: u32 = !(type_size - 1);
                 if (addr & mask) == ($case_addr & mask) {
                     bytes_handled += size!($T);
-                    let _offset = ($case_addr&!mask | addr&!mask) as $T;
+                    let offset = ($case_addr&!mask | addr&!mask) as $T;
                     let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
-                    let whole = read_cache!(self.io_cache, $T, addr);
+                    let whole = read_cache!(self.io_cache, $T, addr & 0xFFF);
                     let new: $T = if size!($io_type) > size!($T) {
-                        (value >> (_offset*8)) as $T
+                        (value >> (offset*8)) as $T
                     } else {
-                        #[allow(unused_imports)]
-                        use std::{ u8, u16, u32 };
-                        whole & !(($io_type::max_value() as $T) << (_offset*8)) | ((value as $T) << (_offset*8))
+                        whole & !(($io_type::max_value() as $T) << (offset*8)) | ((value as $T) << (offset*8))
                     };
-                    write_cache!(self.io_cache, $T, addr, new);
+                    write_cache!(self.io_cache, $T, addr & 0xFFF, new);
                     $setter(self, new);
+                    println!("Writing 0x{:X} to {} (0x{:X})", new, stringify!($case_addr), $case_addr);
                 }
             })+
 
             if bytes_handled < size!($io_type) {
-                println!("WARNING: Unhandled iowrite{} at 0x0400_0{:03X} of {:X}", 8*size!($io_type), addr, value);
+                println!("WARNING: Unhandled iowrite{} at 0x400_0{:03X} of {:X}", 8*size!($io_type), addr & 0xFFF, value);
             }
         }
     }
@@ -182,7 +184,7 @@ macro_rules! write_io_method {
 macro_rules! impl_io_map {
     (
         [$struct_type:ty]
-        $(($T:ident, $case_addr:expr, $debug_name:ident) {
+        $(($T:ident, $case_addr:expr) {
             read => $getter:expr,
             write => $setter:expr
         })+
@@ -202,16 +204,25 @@ macro_rules! impl_io_map {
 #[test]
 fn memory_map() {
     struct Foo {
-        write_cache: Buffer,
+        io_cache: Buffer,
         a: u32,
         b: u16,
         c: u8,
         d: u8,
+        s: u16,
+        t: u16,
     }
+
+    const A: u32 = 0;
+    const B: u32 = 6;
+    const C: u32 = 4;
+    const D: u32 = 5;
+    const S: u32 = 0x10;
+    const T: u32 = 0x12;
 
     impl_io_map! {
         [Foo]
-        (u32, 0u32, a) {
+        (u32, A) {
             read => |this: &Foo| {
                 this.a
             },
@@ -219,7 +230,7 @@ fn memory_map() {
                 this.a = value;
             }
         }
-        (u16, 6u32, b) {
+        (u16, B) {
             read => |this: &Foo| {
                 this.b
             },
@@ -227,7 +238,7 @@ fn memory_map() {
                 this.b = value;
             }
         }
-        (u8, 4u32, c) {
+        (u8, C) {
             read => |this: &Foo| {
                 this.c
             },
@@ -235,7 +246,7 @@ fn memory_map() {
                 this.c = value;
             }
         }
-        (u8, 5u32, d) {
+        (u8, D) {
             read => |this: &Foo| {
                 this.d
             },
@@ -243,16 +254,45 @@ fn memory_map() {
                 this.d = value;
             }
         }
+        (u16, S) {
+            read => |this: &Foo| {
+                this.s
+            },
+            write => |this: &mut Foo, value| {
+                this.s = value;
+            }
+        }
+        (u16, T) {
+            read => |this: &Foo| {
+                this.t
+            },
+            write => |this: &mut Foo, value| {
+                this.t = value;
+            }
+        }
     }
 
     let mut foo = Foo {
-        write_cache: Buffer::new(vec![0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0xCA, 0xAF, 0xDE].into_boxed_slice()),
+        io_cache: Buffer::new(&[0xEF, 0xBE, 0xAD, 0xDE, 0xFE, 0xCA, 0xAF, 0xDE, 0,0,0,0,0,0,0,0, 0,0, 0,0]),
         a: 0xDEADBEEF,
         b: 0xCAFE,
         c: 0xAF,
         d: 0xDE,
+        s: 0, t: 0,
     };
 
+    assert_eq!(foo.ioread32(0x10), 0);
+    foo.iowrite16(0x10, 0x1234);
+    assert_eq!(foo.ioread32(0x10), 0x0000_1234);
+    foo.iowrite32(0x10, 0xDEADBEEF);
+    assert_eq!(foo.ioread8(0x10), 0xEF);
+    assert_eq!(foo.ioread8(0x11), 0xBE);
+    assert_eq!(foo.ioread8(0x12), 0xAD);
+    assert_eq!(foo.ioread8(0x13), 0xDE);
+
+    assert_eq!(foo.ioread16(0x10), 0xBEEF);
+    assert_eq!(foo.ioread16(0x12), 0xDEAD);
+/*
     assert_eq!(foo.ioread8(0), 0xEF);
     assert_eq!(foo.ioread8(1), 0xBE);
     assert_eq!(foo.ioread8(2), 0xAD);
@@ -274,7 +314,7 @@ fn memory_map() {
     assert_eq!(foo.ioread8(4), 0x78);
     assert_eq!(foo.ioread8(5), 0x56);
     assert_eq!(foo.ioread8(6), 0x34);
-    assert_eq!(foo.ioread8(7), 0x12);
+    assert_eq!(foo.ioread8(7), 0x12);*/
 }
 
 #[derive(Clone)]
@@ -389,7 +429,7 @@ impl<T: Ord + Copy> OrderedSet<T> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Cycle(pub i32);
 
 macro_rules! add_cycles {
@@ -423,5 +463,31 @@ impl AddAssign for Cycle {
 impl AddAssign<i32> for Cycle {
     fn add_assign(&mut self, right: i32) {
         self.0 += right;
+    }
+}
+
+impl Sub for Cycle {
+    type Output = Cycle;
+    fn sub(self, right: Cycle) -> Cycle {
+        Cycle(self.0 - right.0)
+    }
+}
+
+impl Sub<i32> for Cycle {
+    type Output = Cycle;
+    fn sub(self, right: i32) -> Cycle {
+        Cycle(self.0 - right)
+    }
+}
+
+impl SubAssign for Cycle {
+    fn sub_assign(&mut self, right: Cycle) {
+        self.0 -= right.0;
+    }
+}
+
+impl SubAssign<i32> for Cycle {
+    fn sub_assign(&mut self, right: i32) {
+        self.0 -= right;
     }
 }
