@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::thread;
 use std::io;
 use std::fmt;
@@ -6,50 +5,53 @@ use std::io::Write;
 use std::sync::mpsc;
 use std::collections::{ HashMap, HashSet };
 
-use num::Num;
+use num::{ Num, PrimInt };
 
 use arm7tdmi::{ StepEvent, Arm7TDMI };
 use interconnect::Interconnect;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 
-macro_rules! parse_argument {
-    ($iter:expr, int) => {{
-        let arg = $iter.next().ok_or(CommandError::ExpectedArgument)?;
-        if arg.starts_with("0x") {
-            Num::from_str_radix(&arg[2..], 16).map_err(|_| CommandError::InvalidInteger)?
-        } else {
-            FromStr::from_str(arg).map_err(|_| CommandError::InvalidInteger)?
-        }
-    }};
-    ($iter:expr, opt_int) => {{
-        if let Some(arg) = $iter.next() {
-            Some(if arg.starts_with("0x") {
-                Num::from_str_radix(&arg[2..], 16).map_err(|_| CommandError::InvalidInteger)?
-            } else {
-                FromStr::from_str(arg).map_err(|_| CommandError::InvalidInteger)?
-            })
-        } else {
-            None
-        }
-    }};
-    ($iter:expr, ident) => {{
-        let text = $iter.next().ok_or(CommandError::ExpectedArgument)?;
-        let mut iter = text.chars();
+fn int<'a, Iter, N>(iter: &mut Iter) -> CommandResult<N>
+        where Iter: Iterator<Item=&'a str>, N: PrimInt {
+    let arg = iter.next().ok_or(CommandError::ExpectedArgument)?;
+    if arg.starts_with("0x") {
+        Num::from_str_radix(&arg[2..], 16)
+    } else {
+        Num::from_str_radix(&arg[2..], 10)
+    }.map_err(|_| CommandError::InvalidInteger)
+}
 
-        match iter.next().unwrap() {
-            'a'...'z' | 'A'...'Z' => {}
+fn opt_int<'a, Iter, N>(iter: &mut Iter) -> CommandResult<Option<N>>
+        where Iter: Iterator<Item=&'a str>, N: PrimInt {
+    if let Some(arg) = iter.next() {
+        if arg.starts_with("0x") {
+            Num::from_str_radix(&arg[2..], 16)
+        } else {
+            Num::from_str_radix(&arg[2..], 10)
+        }.map(|n| Some(n)).map_err(|_| CommandError::InvalidInteger)
+    } else {
+        Ok(None)
+    }
+}
+
+fn ident<'a, Iter>(iter: &mut Iter) -> CommandResult<String>
+        where Iter: Iterator<Item=&'a str> {
+    let text = iter.next().ok_or(CommandError::ExpectedArgument)?;
+    let mut iter = text.chars();
+
+    match iter.next().unwrap() {
+        'a'...'z' | 'A'...'Z' => {}
+        _ => return Err(CommandError::InvalidIdentifier)
+    }
+
+    while let Some(ch) = iter.next() {
+        match ch {
+            'a'...'z' | 'A'...'Z' | '0'...'9' => {}
             _ => return Err(CommandError::InvalidIdentifier)
         }
+    }
 
-        while let Some(ch) = iter.next() {
-            match ch {
-                'a'...'z' | 'A'...'Z' | '0'...'9' => {}
-                _ => return Err(CommandError::InvalidIdentifier)
-            }
-        }
-
-        text.to_string()
-    }};
+    Ok(text.to_string())
 }
 
 macro_rules! commands {
@@ -58,21 +60,20 @@ macro_rules! commands {
     ),+) => {
         pub fn parse_command(cmd: &str) -> Result<Command, CommandError> {
             let mut iter = cmd.trim().split_whitespace();
-            let cmd = match iter.next().ok_or(CommandError::NoInput)? {
-                $($($pat)|+ => {
-                    $(let $var = parse_argument!(iter, $argparser);)*
-                    if iter.next().is_some() {
-                        return Err(CommandError::TooManyArguments);
+
+            match iter.next().ok_or(CommandError::NoInput)? {
+                $(
+                    $($pat)|+ => {
+                        $(let $var = $argparser(&mut iter)?;)*
+                        if iter.next().is_some() {
+                            return Err(CommandError::TooManyArguments);
+                        }
+                        Ok($res)
                     }
-                    $res
-                })+
+                )+
 
-                _ => {
-                    return Err(CommandError::UnknownCommand);
-                }
-            };
-
-            Ok(cmd)
+                _ => Err(CommandError::UnknownCommand)
+            }
         }
     };
 }
@@ -86,6 +87,8 @@ pub enum CommandError {
     TooManyArguments,
     InvalidIdentifier,
 }
+
+type CommandResult<T> = Result<T, CommandError>;
 
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -128,7 +131,6 @@ pub enum Command {
     StoreH(u32, u16),
     StoreW(u32, u32),
 
-    Disassemble(u32),
     ListRegs,
 
     Exit,
@@ -158,7 +160,6 @@ commands! {
     "storeh" | "sh" => (addr: int, val: int) = Command::StoreH(addr, val),
     "storew" | "sw" => (addr: int, val: int) = Command::StoreW(addr, val),
 
-    "dis" | "disassemble" => (n: opt_int) = Command::Disassemble(n.unwrap_or(4)),
     "lregs" => () = Command::ListRegs,
 
     "quit" | "exit" => () = Command::Exit
@@ -197,7 +198,7 @@ impl Debugger {
         }
     }
 
-    fn dis(&mut self) {
+    fn disassemble(&mut self) {
         let thumb_mode = self.arm.cpsr.thumb_mode;
         let addr = self.arm.current_pc();
         if thumb_mode {
@@ -241,15 +242,13 @@ impl Debugger {
     }
 
     pub fn run(&mut self) {
-        let mut state = State::Paused;
-
         let (tx, rx) = mpsc::channel();
+
         thread::Builder::new().name("stdin poll thread".to_string()).spawn(move || {
-            let stdin = io::stdin();
             let mut line = String::new();
             let mut running = true;
             while running {
-                stdin.read_line(&mut line).unwrap();
+                io::stdin().read_line(&mut line).unwrap();
                 let cmd = parse_command(&line);
                 if cmd == Ok(Command::Exit) {
                     running = false;
@@ -259,37 +258,37 @@ impl Debugger {
             }
         }).expect("failed to spawn thread");
 
+        let mut state = State::Paused;
         let mut last_cmd: Option<Command> = None;
 
         loop {
             match state {
                 State::Paused => {
-                    while state == State::Paused {
-                        print!(">> ");
-                        io::stdout().flush().unwrap();
+                    print!(">> ");
+                    io::stdout().flush().unwrap();
 
-                        match rx.recv().unwrap() {
-                            Err(CommandError::NoInput) => {
-                                if let Some(cmd) = last_cmd.take() {
-                                    self.execute_command(cmd.clone());
-                                    last_cmd = Some(cmd);
-                                }
-                            }
-                            Err(error) => {
-                                println!("Error: {}", error);
-                            }
-                            Ok(cmd) => {
-                                state = self.execute_command(cmd.clone());
+                    match rx.recv().unwrap() {
+                        Err(CommandError::NoInput) => {
+                            if let Some(cmd) = last_cmd.take() {
+                                self.execute_command(cmd.clone());
                                 last_cmd = Some(cmd);
                             }
+                        }
+                        Err(error) => {
+                            println!("Error: {}", error);
+                        }
+                        Ok(cmd) => {
+                            state = self.execute_command(cmd.clone());
+                            last_cmd = Some(cmd);
                         }
                     }
                 }
 
                 State::Running => {
                     loop {
-                        if self.step(false) {
-                            self.dis();
+                        let event_occurred = self.step(false);
+                        if event_occurred {
+                            self.disassemble();
                             state = State::Paused;
                             break;
                         }
@@ -299,8 +298,9 @@ impl Debugger {
                 State::Stepping(n) => {
                     for i in 1..n+1 {
                         println!("Stepping... {}", i);
-                        self.dis();
-                        if self.step(true) {
+                        self.disassemble();
+                        let event_occurred = self.step(true);
+                        if event_occurred {
                             break;
                         }
                     }
@@ -399,9 +399,6 @@ impl Debugger {
                 self.interconnect.write32(addr, val);
             }
 
-            Disassemble(_count) => {
-                unimplemented!();
-            }
             ListRegs => {
                 println!("{:?}", self.arm);
             }
