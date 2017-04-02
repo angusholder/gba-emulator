@@ -13,6 +13,7 @@ mod interconnect;
 mod disassemble;
 mod debugger;
 mod renderer;
+mod timer;
 
 use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;

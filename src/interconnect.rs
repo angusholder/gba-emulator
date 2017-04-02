@@ -2,6 +2,7 @@ use std::ptr;
 
 use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
+use timer::{ Timer, TimerUnit, TimerState };
 
 const ROM_START: u32 = 0x0000_0000;
 const ROM_SIZE: u32 = 0x4000;
@@ -98,6 +99,7 @@ pub struct Interconnect {
     code_segment_timing_u32: Cycle,
     code_segment_region: CodeRegion,
 
+    timers: [Timer; 4],
     renderer: Renderer,
 
     rom: Buffer,
@@ -138,6 +140,12 @@ impl Interconnect {
             code_segment_timing_u32: Cycle(0),
             code_segment_region: CodeRegion::Rom,
 
+            timers: [
+                Timer::new(TimerUnit::Tm0),
+                Timer::new(TimerUnit::Tm1),
+                Timer::new(TimerUnit::Tm2),
+                Timer::new(TimerUnit::Tm3)
+            ],
             renderer: Renderer::new(),
 
             rom: Buffer::new(bios),
@@ -166,16 +174,72 @@ impl Interconnect {
         }
     }
 
-    pub fn step_cycles(&mut self, cycles: Cycle) -> bool {
-        let flag = self.renderer.step_cycles(cycles);
-        if !flag.is_empty() {
-            assert!(flag.bits().count_ones() == 1);
-            if self.master_interrupt_enable && self.interrupt_enable.contains(flag) {
-                self.interrupt_flags.insert(flag);
-                return true;
+    pub fn step_cycles(&mut self, mut cycles: Cycle) -> bool {
+        while cycles > Cycle(0) {
+            let flag = self.renderer.step_cycles(Cycle(1));
+            if !flag.is_empty() {
+                assert!(flag.bits().count_ones() == 1);
+                if self.master_interrupt_enable && self.interrupt_enable.contains(flag) {
+                    self.interrupt_flags.insert(flag);
+                    return true;
+                }
+            }
+
+            let flag = self.step_timers();
+            if !flag.is_empty() {
+                assert!(flag.bits().count_ones() == 1);
+                if self.master_interrupt_enable && self.interrupt_enable.contains(flag) {
+                    self.interrupt_flags.insert(flag);
+                    return true;
+                }
+            }
+
+            cycles -= 1;
+        }
+
+        false
+    }
+
+    #[inline(never)]
+    #[no_mangle]
+    fn step_timers(&mut self) -> IrqFlags {
+        let mut signal = IrqFlags::empty();
+        let mut prev_timer_wrapped = false;
+
+        for timer in self.timers.iter_mut() {
+            if let TimerState::Enabled { mut remaining, mut value } = timer.state {
+                if timer.cascade_timing {
+                    if prev_timer_wrapped {
+                        value = value.wrapping_add(1);
+                    }
+                } else {
+                    remaining -= 1;
+                    if remaining == Cycle(0) {
+                        remaining = timer.cycles_per_tick();
+                        value = value.wrapping_add(1);
+                    }
+                }
+
+                if value == 0 {
+                    prev_timer_wrapped = true;
+                    // Here we're prioritising irq of lower numbered timers. If a timer
+                    // before us has triggered a signal, we get ignored.
+                    if timer.irq_on_overflow && signal.is_empty() {
+                        signal.insert(timer.irq_flag());
+                    }
+                    value = timer.reload_value;
+                } else {
+                    prev_timer_wrapped = false;
+                }
+
+                timer.state = TimerState::Enabled {
+                    remaining: remaining,
+                    value: value
+                };
             }
         }
-        false
+
+        signal
     }
 
     pub fn read8(&mut self, addr: u32) -> (Cycle, u8) {
@@ -794,6 +858,72 @@ impl_io_map! {
         }
     }
 
+    (u16, REG_TM0CNT_L) {
+        read => |ic: &Interconnect| {
+            ic.timers[0].reload_value
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[0].reload_value = value;
+        }
+    }
+    (u16, REG_TM1CNT_L) {
+        read => |ic: &Interconnect| {
+            ic.timers[1].reload_value
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[1].reload_value = value;
+        }
+    }
+    (u16, REG_TM2CNT_L) {
+        read => |ic: &Interconnect| {
+            ic.timers[2].reload_value
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[2].reload_value = value;
+        }
+    }
+    (u16, REG_TM3CNT_L) {
+        read => |ic: &Interconnect| {
+            ic.timers[3].reload_value
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[3].reload_value = value;
+        }
+    }
+
+    (u16, REG_TM0CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.timers[0].read_cnt()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[0].write_cnt(value);
+        }
+    }
+    (u16, REG_TM1CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.timers[1].read_cnt()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[1].write_cnt(value);
+        }
+    }
+    (u16, REG_TM2CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.timers[2].read_cnt()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[2].write_cnt(value);
+        }
+    }
+    (u16, REG_TM3CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.timers[3].read_cnt()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.timers[3].write_cnt(value);
+        }
+    }
+
     (u16, REG_GREENSWAP   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_WIN0H       ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_WIN1H       ) { read => read_stub!(), write => write_stub!() }
@@ -845,14 +975,6 @@ impl_io_map! {
     (u32, REG_DMA3DAD     ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_DMA3CNT_L   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_DMA3CNT_H   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM0CNT_L    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM0CNT_H    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM1CNT_L    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM1CNT_H    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM2CNT_L    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM2CNT_H    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM3CNT_L    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_TM3CNT_H    ) { read => read_stub!(), write => write_stub!() }
     (u32, REG_SIODATA32   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SIOMULTI0   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SIOMULTI1   ) { read => read_stub!(), write => write_stub!() }
