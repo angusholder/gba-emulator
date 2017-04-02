@@ -133,7 +133,7 @@ macro_rules! read_io_method {
                     bytes_handled += size!($T);
                     // May be unused by foo!()
                     let _offset = $case_addr&!mask | addr&!mask;
-                    let value = $getter(self);
+                    let value: $T = $getter(self);
                     result |= foo!(from: $T, to: $io_type, value, _offset);
                     println!("Reading 0x{:X} from {} (0x{:X})", value, stringify!($case_addr), $case_addr);
                 }

@@ -117,7 +117,7 @@ pub struct Interconnect {
     master_interrupt_enable: bool,
     interrupt_enable: IrqFlags,
     interrupt_flags: IrqFlags,
-    sound_bias: SoundPWMControl,
+    sound_bias: SoundPWMControlReg,
 }
 
 // Regions mirrored:
@@ -167,7 +167,7 @@ impl Interconnect {
             master_interrupt_enable: true,
             interrupt_enable: IrqFlags::empty(),
             interrupt_flags: IrqFlags::empty(),
-            sound_bias: SoundPWMControl {
+            sound_bias: SoundPWMControlReg {
                 bias_level: 0x200,
                 amplitude_resolution: 0,
             }
@@ -660,10 +660,10 @@ impl_io_map! {
 
     (u32, REG_SOUNDBIAS) {
         read => |ic: &Interconnect| {
-            Into::<u32>::into(ic.sound_bias)
+            ic.sound_bias.into()
         },
         write => |ic: &mut Interconnect, value: u32| {
-            ic.sound_bias = value.into();
+            ic.sound_bias = SoundPWMControlReg::from(value);
         }
     }
 
@@ -695,7 +695,7 @@ impl_io_map! {
             0
         },
         write => |ic: &mut Interconnect, value: u32| {
-            let ctrl = WaitStateControl::from(value);
+            let ctrl = WaitStateControlReg::from(value);
             ic.sram_wait_control = Cycle([4, 3, 2, 8][ctrl.sram_wait_control]);
             ic.gamepak_wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
             ic.gamepak_wait_states[0].seq = Cycle([2, 1][ctrl.wait_state_0_seq]);
@@ -1015,7 +1015,7 @@ pub flags IrqFlags: u16 {
 
 unpacked_bitfield_struct! {
 #[derive(Clone, Copy)]
-pub struct WaitStateControl: u32 {
+pub struct WaitStateControlReg: u32 {
     (0, 2) sram_wait_control: usize,
     (2, 2) wait_state_0_non_seq: usize,
     (4, 1) wait_state_0_seq: usize,
@@ -1029,7 +1029,7 @@ pub struct WaitStateControl: u32 {
 }
 
 #[derive(Clone, Copy)]
-pub struct SoundPWMControl: u32 {
+pub struct SoundPWMControlReg: u32 {
     (0,10) bias_level: u16,
     (14,2) amplitude_resolution: u8,
 }
