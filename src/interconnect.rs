@@ -1,6 +1,7 @@
 use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
 use timer::{ Timer, TimerUnit, TimerState };
+use gamepak::GamePak;
 
 const ROM_START: u32 = 0x0000_0000;
 const ROM_SIZE: u32 = 0x4000;
@@ -27,11 +28,6 @@ const IO_TIMING_U8: Cycle = Cycle(1);
 const IO_TIMING_U16: Cycle = Cycle(1);
 const IO_TIMING_U32: Cycle = Cycle(1);
 
-const GAMEPAK_PAGE_SIZE: u32 = 128*1024;
-const GAMEPAK_PAGE_MASK: u32 = GAMEPAK_PAGE_SIZE - 1;
-const GAMEPAK_MAX_SIZE: u32 = 32 * 1024 * 1024;
-const GAMEPAK_MAX_SIZE_MASK: u32 = GAMEPAK_MAX_SIZE - 1;
-
 macro_rules! unhandled_read {
     ($addr:expr) => {
         panic!("Unhandled read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF)
@@ -41,21 +37,6 @@ macro_rules! unhandled_read {
 macro_rules! unhandled_write {
     ($addr:expr, $value:expr) => {
         panic!("Unhandled write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
-    }
-}
-
-#[derive(Clone, Copy)]
-struct WaitState {
-    non_seq: Cycle,
-    seq: Cycle,
-}
-
-impl WaitState {
-    fn new(non_seq: i32, seq: i32) -> WaitState {
-        WaitState {
-            non_seq: Cycle(non_seq),
-            seq: Cycle(seq),
-        }
     }
 }
 
@@ -72,12 +53,10 @@ pub struct Interconnect {
     ewram: Buffer,
     iwram: Buffer,
     io_cache: Buffer,
-    gamepak: Buffer,
+    gamepak: GamePak,
 
     sram_wait_control: Cycle,
-    gamepak_wait_states: [WaitState; 3],
     gamepak_prefetch_buffer: bool,
-    gamepak_next_seq_addr: u32,
 
     post_boot_flag: bool,
     master_interrupt_enable: bool,
@@ -113,16 +92,10 @@ impl Interconnect {
             ewram: Buffer::with_capacity(EWRAM_SIZE),
             iwram: Buffer::with_capacity(IWRAM_SIZE),
             io_cache: Buffer::with_capacity(0x804),
-            gamepak: Buffer::new(game),
+            gamepak: GamePak::new(game),
 
             sram_wait_control: Cycle(4),
-            gamepak_wait_states: [
-                WaitState::new(4, 2),
-                WaitState::new(4, 4),
-                WaitState::new(4, 8),
-            ],
             gamepak_prefetch_buffer: false,
-            gamepak_next_seq_addr: 0,
 
             post_boot_flag: false,
             master_interrupt_enable: true,
@@ -201,7 +174,7 @@ impl Interconnect {
         signal
     }
 
-    pub fn read8(&mut self, addr: u32) -> (Cycle, u8) {
+    pub fn read8(&self, addr: u32) -> (Cycle, u8) {
         match addr >> 24 {
             0x0 | 0x1 => { // rom
                 // TODO: Handle out of bounds, currently we panic
@@ -231,14 +204,14 @@ impl Interconnect {
                 self.renderer.oam_read8(addr)
             }
             0x8...0xD => { // GamePak ROM
-                self.gamepak_read8(addr)
+                self.gamepak.read8(addr)
             }
 
             _ => unhandled_read!(addr)
         }
     }
 
-    pub fn read16(&mut self, addr: u32) -> (Cycle, u16) {
+    pub fn read16(&self, addr: u32) -> (Cycle, u16) {
         if addr & 1 != 0 { panic!("Unaligned halfword read at 0x{:08X}", addr); }
 
         match addr >> 24 {
@@ -270,14 +243,14 @@ impl Interconnect {
                 self.renderer.oam_read16(addr)
             }
             0x8...0xD => { // GamePak ROM
-                self.gamepak_read16(addr)
+                self.gamepak.read16(addr)
             }
 
             _ => unhandled_read!(addr)
         }
     }
 
-    pub fn read32(&mut self, addr: u32) -> (Cycle, u32) {
+    pub fn read32(&self, addr: u32) -> (Cycle, u32) {
         if addr & 3 != 0 { panic!("Unaligned word read at 0x{:08X}", addr); }
 
         match addr >> 24 {
@@ -309,7 +282,7 @@ impl Interconnect {
                 self.renderer.oam_read32(addr)
             }
             0x8...0xD => { // GamePak ROM
-                self.gamepak_read32(addr)
+                self.gamepak.read32(addr)
             }
 
             _ => unhandled_read!(addr)
@@ -400,44 +373,6 @@ impl Interconnect {
 
             _ => unhandled_write!(addr, value),
         }
-    }
-
-    fn gamepak_read8(&mut self, addr: u32) -> (Cycle, u8) {
-        let (cycles, read) = self.gamepak_read16(addr & !1);
-        let read = (read >> (addr & 1)) as u8;
-        self.gamepak_next_seq_addr = (addr + 1) & !1;
-        (cycles, read)
-    }
-
-    fn gamepak_read16(&mut self, addr: u32) -> (Cycle, u16) {
-        let seq = self.gamepak_next_seq_addr == addr;
-        debug_assert!(addr & 1 == 0);
-
-        let cycle = match addr >> 24 {
-            0x8 | 0x9 if seq => self.gamepak_wait_states[0].seq,
-            0xA | 0xB if seq => self.gamepak_wait_states[1].seq,
-            0xC | 0xD if seq => self.gamepak_wait_states[2].seq,
-            0x8 | 0x9 if !seq => self.gamepak_wait_states[0].non_seq,
-            0xA | 0xB if !seq => self.gamepak_wait_states[1].non_seq,
-            0xC | 0xD if !seq => self.gamepak_wait_states[2].non_seq,
-            _ => unreachable!(),
-        };
-
-        let read = if (addr as usize) < self.gamepak.len() {
-            self.gamepak.read16(addr & GAMEPAK_MAX_SIZE_MASK)
-        } else {
-            (addr >> 1 & 0xFFFF) as u16
-        };
-        self.gamepak_next_seq_addr = (addr + 2) & !1;
-
-        (cycle, read)
-    }
-
-    fn gamepak_read32(&mut self, addr: u32) -> (Cycle, u32) {
-        let (cycles1, read1) = self.gamepak_read16(addr);
-        let (cycles2, read2) = self.gamepak_read16(addr + 2);
-        self.gamepak_next_seq_addr = (addr + 4) & !1;
-        (cycles1 + cycles2, (read1 as u32) | ((read2 as u32) << 16))
     }
 
     pub fn exec_thumb_slow(&mut self, addr: u32) -> (Cycle, u16) {
@@ -546,12 +481,12 @@ impl_io_map! {
         write => |ic: &mut Interconnect, value: u32| {
             let ctrl = WaitStateControlReg::from(value);
             ic.sram_wait_control = Cycle([4, 3, 2, 8][ctrl.sram_wait_control]);
-            ic.gamepak_wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
-            ic.gamepak_wait_states[0].seq = Cycle([2, 1][ctrl.wait_state_0_seq]);
-            ic.gamepak_wait_states[1].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_1_non_seq]);
-            ic.gamepak_wait_states[1].seq = Cycle([4, 1][ctrl.wait_state_1_seq]);
-            ic.gamepak_wait_states[2].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_2_non_seq]);
-            ic.gamepak_wait_states[2].seq = Cycle([8, 1][ctrl.wait_state_2_seq]);
+            ic.gamepak.wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
+            ic.gamepak.wait_states[0].seq = Cycle([2, 1][ctrl.wait_state_0_seq]);
+            ic.gamepak.wait_states[1].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_1_non_seq]);
+            ic.gamepak.wait_states[1].seq = Cycle([4, 1][ctrl.wait_state_1_seq]);
+            ic.gamepak.wait_states[2].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_2_non_seq]);
+            ic.gamepak.wait_states[2].seq = Cycle([8, 1][ctrl.wait_state_2_seq]);
             ic.gamepak_prefetch_buffer = ctrl.gamepak_prefetch_buffer;
         }
     }
