@@ -300,15 +300,6 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn set_spsr(&mut self, psr: StatusRegister) {
-        match self.cpsr.mode {
-            OperatingMode::User | OperatingMode::System | OperatingMode::None => {},
-            OperatingMode::Supervisor => self.svc_spsr = psr,
-            OperatingMode::Irq        => self.irq_spsr = psr,
-            OperatingMode::Undefined  => self.und_spsr = psr,
-        }
-    }
-
     pub fn has_spsr(&self) -> bool {
         match self.cpsr.mode {
             OperatingMode::User |

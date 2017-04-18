@@ -1,5 +1,3 @@
-use std::ptr;
-
 use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
 use timer::{ Timer, TimerUnit, TimerState };
@@ -34,10 +32,6 @@ const GAMEPAK_PAGE_MASK: u32 = GAMEPAK_PAGE_SIZE - 1;
 const GAMEPAK_MAX_SIZE: u32 = 32 * 1024 * 1024;
 const GAMEPAK_MAX_SIZE_MASK: u32 = GAMEPAK_MAX_SIZE - 1;
 
-// Unreadable area that will panic if read from.
-const CODE_SEGMENT_BASE_INVALID: u32 = 0x1000_0000;
-const CODE_SEGMENT_SIZE_INVALID: u32 = 0;
-
 macro_rules! unhandled_read {
     ($addr:expr) => {
         panic!("Unhandled read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF)
@@ -48,24 +42,6 @@ macro_rules! unhandled_write {
     ($addr:expr, $value:expr) => {
         panic!("Unhandled write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Type {
-    U8,
-    U16,
-    U32,
-}
-
-// Enum for when we need to take special action accessing a memory region.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CodeRegion {
-    // Can only be read while we are executing inside it
-    Rom,
-    // We need to track sequential/non-sequential accesses
-    GamePak,
-    // Any other region, no special action
-    DontCare,
 }
 
 #[derive(Clone, Copy)]
@@ -87,17 +63,7 @@ impl WaitState {
 pub struct Interconnect {
     pub prefetch: [u32; 2],
 
-    // The code segment tracks the region of memory the PC is currently in, allowing the fast path
-    // of instruction fetching to be a simple bounds check then pointer load, falling back to the
-    // fully-fledged `read32()` routine if necessary. `set_code_segment()` is used to update the
-    // code segment to a different region, and `invalidate_code_segment()` when we want to force
-    // falling back on the slow path.
-    code_segment_ptr: *const u8,
-    code_segment_size: u32,
-    code_segment_base: u32,
-    code_segment_timing_u16: Cycle,
-    code_segment_timing_u32: Cycle,
-    code_segment_region: CodeRegion,
+    pc_inside_bios: bool,
 
     timers: [Timer; 4],
     renderer: Renderer,
@@ -133,12 +99,7 @@ impl Interconnect {
         Interconnect {
             prefetch: Default::default(),
 
-            code_segment_ptr: ptr::null(),
-            code_segment_size: 0,
-            code_segment_base: 0,
-            code_segment_timing_u16: Cycle(0),
-            code_segment_timing_u32: Cycle(0),
-            code_segment_region: CodeRegion::Rom,
+            pc_inside_bios: true,
 
             timers: [
                 Timer::new(TimerUnit::Tm0),
@@ -200,8 +161,6 @@ impl Interconnect {
         false
     }
 
-    #[inline(never)]
-    #[no_mangle]
     fn step_timers(&mut self) -> IrqFlags {
         let mut signal = IrqFlags::empty();
         let mut prev_timer_wrapped = false;
@@ -246,7 +205,7 @@ impl Interconnect {
         match addr >> 24 {
             0x0 | 0x1 => { // rom
                 // TODO: Handle out of bounds, currently we panic
-                let read = if self.code_segment_region == CodeRegion::Rom {
+                let read = if self.pc_inside_bios {
                     self.rom.read8(addr)
                 } else {
                     0
@@ -285,7 +244,7 @@ impl Interconnect {
         match addr >> 24 {
             0x0 | 0x1 => { // rom
                 // TODO: Handle out of bounds, currently we panic
-                let read = if self.code_segment_region == CodeRegion::Rom {
+                let read = if self.pc_inside_bios {
                     self.rom.read16(addr)
                 } else {
                     0
@@ -324,7 +283,7 @@ impl Interconnect {
         match addr >> 24 {
             0x0 | 0x1 => { // rom
                 // TODO: Handle out of bounds, currently we panic
-                let read = if self.code_segment_region == CodeRegion::Rom {
+                let read = if self.pc_inside_bios {
                     self.rom.read32(addr)
                 } else {
                     0
@@ -443,21 +402,6 @@ impl Interconnect {
         }
     }
 
-    fn gamepak_read_timing(&self, addr: u32, ty: Type) -> Cycle {
-        let upper = addr >> 24;
-        assert!(0x8 <= upper && upper <= 0xD, "Invalid gamepak address {:X}", addr);
-        let index = ((upper - 0x8) / 2) as usize;
-        let _wait_state = self.gamepak_wait_states[index];
-        match ty {
-            Type::U8 | Type::U16 => {
-                unimplemented!();
-            }
-            Type::U32 => {
-                unimplemented!();
-            }
-        }
-    }
-
     fn gamepak_read8(&mut self, addr: u32) -> (Cycle, u8) {
         let (cycles, read) = self.gamepak_read16(addr & !1);
         let read = (read >> (addr & 1)) as u8;
@@ -467,11 +411,9 @@ impl Interconnect {
 
     fn gamepak_read16(&mut self, addr: u32) -> (Cycle, u16) {
         let seq = self.gamepak_next_seq_addr == addr;
-        let upper = addr >> 24;
-        debug_assert!(0x8 <= upper && upper <= 0xD);
         debug_assert!(addr & 1 == 0);
 
-        let cycle = match upper {
+        let cycle = match addr >> 24 {
             0x8 | 0x9 if seq => self.gamepak_wait_states[0].seq,
             0xA | 0xB if seq => self.gamepak_wait_states[1].seq,
             0xC | 0xD if seq => self.gamepak_wait_states[2].seq,
@@ -481,7 +423,6 @@ impl Interconnect {
             _ => unreachable!(),
         };
 
-        let addr = addr & GAMEPAK_MAX_SIZE_MASK;
         let read = if (addr as usize) < self.gamepak.len() {
             self.gamepak.read16(addr & GAMEPAK_MAX_SIZE_MASK)
         } else {
@@ -500,105 +441,13 @@ impl Interconnect {
     }
 
     pub fn exec_thumb_slow(&mut self, addr: u32) -> (Cycle, u16) {
-        let (cycles_used, read) = self.read16(addr);
-
-        self.set_code_segment(addr);
-
-        (cycles_used, read)
-    }
-
-    pub fn exec_thumb_fast(&mut self, addr: u32) -> Option<(Cycle, u16)> {
-        let offset = addr.wrapping_sub(self.code_segment_base);
-        if offset < self.code_segment_size {
-            let next_op = self.prefetch[0] as u16;
-            self.prefetch[0] = self.prefetch[1];
-            self.prefetch[1] = unsafe {
-                *(self.code_segment_ptr.offset(offset as isize) as *const u16) as u32
-            };
-            Some((self.code_segment_timing_u16, next_op))
-        } else {
-            None
-        }
+        self.pc_inside_bios = addr >> 24 == 0;
+        self.read16(addr)
     }
 
     pub fn exec_arm_slow(&mut self, addr: u32) -> (Cycle, u32) {
-        let (cycles_used, read) = self.read32(addr);
-
-        self.set_code_segment(addr);
-
-        (cycles_used, read)
-    }
-
-    pub fn exec_arm_fast(&mut self, addr: u32) -> Option<(Cycle, u32)> {
-        let offset = addr.wrapping_sub(self.code_segment_base);
-        if offset < self.code_segment_size {
-            let next_op = self.prefetch[0];
-            self.prefetch[0] = self.prefetch[1];
-            self.prefetch[1] = unsafe {
-                *(self.code_segment_ptr.offset(offset as isize) as *const u32)
-            };
-            Some((self.code_segment_timing_u32, next_op))
-        } else {
-            None
-        }
-    }
-
-    pub fn set_code_segment(&mut self, addr: u32) {
-        let upper = addr >> 24;
-        let addr = addr & 0x00FF_FFFF;
-        match upper {
-            0 | 1 => { // rom
-                self.code_segment_base = addr & ROM_MASK;
-                self.code_segment_size = ROM_SIZE;
-                self.code_segment_ptr = self.rom.as_ptr();
-                self.code_segment_timing_u16 = ROM_TIMING_U16;
-                self.code_segment_timing_u32 = ROM_TIMING_U32;
-                self.code_segment_region = CodeRegion::Rom;
-            }
-            2 => { // ewram
-                self.code_segment_base = addr & EWRAM_MASK;
-                self.code_segment_size = EWRAM_SIZE;
-                self.code_segment_ptr = self.ewram.as_ptr();
-                self.code_segment_timing_u16 = EWRAM_TIMING_U16;
-                self.code_segment_timing_u32 = EWRAM_TIMING_U32;
-                self.code_segment_region = CodeRegion::DontCare;
-            }
-            3 => { // iwram
-                self.code_segment_base = addr & IWRAM_MASK;
-                self.code_segment_size = IWRAM_SIZE;
-                self.code_segment_ptr = self.iwram.as_ptr();
-                self.code_segment_timing_u16 = IWRAM_TIMING_U16;
-                self.code_segment_timing_u32 = IWRAM_TIMING_U32;
-                self.code_segment_region = CodeRegion::DontCare;
-            }
-            6 => { // vram
-                use renderer::*;
-                self.code_segment_base = vram_mask(addr);
-                self.code_segment_size = VRAM_SIZE;
-                self.code_segment_ptr = self.renderer.vram_as_ptr();
-                self.code_segment_timing_u16 = VRAM_TIMING_U16;
-                self.code_segment_timing_u32 = VRAM_TIMING_U32;
-                self.code_segment_region = CodeRegion::DontCare;
-            }
-            0x8...0xD => { // GamePak ROM
-                let base = addr & !GAMEPAK_PAGE_MASK;
-                self.code_segment_base = base;
-                self.code_segment_size = GAMEPAK_PAGE_SIZE;
-                self.code_segment_ptr = unsafe { self.gamepak.as_ptr().offset(base as isize) };
-                self.code_segment_timing_u16 = self.gamepak_read_timing(addr, Type::U16);
-                self.code_segment_timing_u32 = self.gamepak_read_timing(addr, Type::U32);
-                self.code_segment_region = CodeRegion::GamePak;
-            }
-            _ => {
-                self.invalidate_code_segment();
-            }
-        }
-    }
-
-    pub fn invalidate_code_segment(&mut self) {
-        self.code_segment_base = CODE_SEGMENT_BASE_INVALID;
-        self.code_segment_size = CODE_SEGMENT_SIZE_INVALID;
-        self.code_segment_region = CodeRegion::DontCare;
+        self.pc_inside_bios = addr >> 24 == 0;
+        self.read32(addr)
     }
 }
 
