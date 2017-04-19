@@ -46,7 +46,7 @@ pub struct Timer {
     unit: TimerUnit,
 
     scale: TimerScale,
-    pub reload_value: u16,
+    reload_value: u16,
     pub cascade_timing: bool,
     pub irq_on_overflow: bool,
     pub state: TimerState,
@@ -110,6 +110,18 @@ impl Timer {
             irq_enable: self.irq_on_overflow,
             start: self.state != TimerState::Disabled,
         }.into()
+    }
+
+    pub fn set_reload_value(&mut self, value: u16) {
+        self.reload_value = value;
+    }
+
+    pub fn get_current_value(&self) -> u16 {
+        if let TimerState::Enabled { value, .. } = self.state {
+            value
+        } else {
+            self.reload_value
+        }
     }
 }
 

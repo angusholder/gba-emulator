@@ -642,34 +642,34 @@ impl_io_map! {
 
     (u16, REG_TM0CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[0].reload_value
+            ic.timers[0].get_current_value()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[0].reload_value = value;
+            ic.timers[0].set_reload_value(value);
         }
     }
     (u16, REG_TM1CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[1].reload_value
+            ic.timers[1].get_current_value()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[1].reload_value = value;
+            ic.timers[1].set_reload_value(value);
         }
     }
     (u16, REG_TM2CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[2].reload_value
+            ic.timers[2].get_current_value()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[2].reload_value = value;
+            ic.timers[2].set_reload_value(value);
         }
     }
     (u16, REG_TM3CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[3].reload_value
+            ic.timers[3].get_current_value()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[3].reload_value = value;
+            ic.timers[3].set_reload_value(value);
         }
     }
 
