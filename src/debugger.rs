@@ -10,9 +10,10 @@ use num::{ Num, PrimInt };
 use arm7tdmi::{ StepEvent, Arm7TDMI };
 use interconnect::Interconnect;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
+use log::{ self, LogKind, LogLevel };
 
-fn int<'a, Iter, N>(iter: &mut Iter) -> CommandResult<N>
-        where Iter: Iterator<Item=&'a str>, N: PrimInt {
+fn int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<N>
+        where Iter: Iterator<Item=&'a str> {
     let arg = iter.next().ok_or(CommandError::ExpectedArgument)?;
     if arg.starts_with("0x") {
         Num::from_str_radix(&arg[2..], 16)
@@ -21,8 +22,8 @@ fn int<'a, Iter, N>(iter: &mut Iter) -> CommandResult<N>
     }.map_err(|_| CommandError::InvalidInteger)
 }
 
-fn opt_int<'a, Iter, N>(iter: &mut Iter) -> CommandResult<Option<N>>
-        where Iter: Iterator<Item=&'a str>, N: PrimInt {
+fn opt_int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<Option<N>>
+        where Iter: Iterator<Item=&'a str> {
     if let Some(arg) = iter.next() {
         if arg.starts_with("0x") {
             Num::from_str_radix(&arg[2..], 16)
@@ -52,6 +53,13 @@ fn ident<'a, Iter>(iter: &mut Iter) -> CommandResult<String>
     }
 
     Ok(text.to_string())
+}
+
+fn ident_list<'a, Iter>(iter: &mut Iter) -> CommandResult<Vec<&'a str>>
+        where Iter: Iterator<Item=&'a str> {
+    let values: &str = iter.next().ok_or(CommandError::ExpectedArgument)?;
+
+    Ok(values.split(",").collect())
 }
 
 macro_rules! commands {
@@ -131,6 +139,8 @@ pub enum Command {
     StoreH(u32, u16),
     StoreW(u32, u32),
 
+    Log(LogLevel, Vec<LogKind>),
+
     ListRegs,
 
     Exit,
@@ -161,6 +171,14 @@ commands! {
     "storew" | "sw" => (addr: int, val: int) = Command::StoreW(addr, val),
 
     "lregs" => () = Command::ListRegs,
+
+    "log" => (level_ident: ident, kind_idents: ident_list) = {
+        let level = level_ident.parse::<LogLevel>().map_err(|_| CommandError::InvalidIdentifier)?;
+        let kinds = kind_idents.iter().map(|s| {
+            s.parse().map_err(|_| CommandError::InvalidIdentifier)
+        }).collect::<CommandResult<Vec<LogKind>>>()?;
+        Command::Log(level, kinds)
+    },
 
     "quit" | "exit" => () = Command::Exit
 }
@@ -401,6 +419,12 @@ impl Debugger {
 
             ListRegs => {
                 println!("{:?}", self.arm);
+            }
+
+            Log(level, kinds) => {
+                for kind in kinds {
+                    log::set_log_level(kind, level);
+                }
             }
 
             Exit => {

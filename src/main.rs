@@ -7,6 +7,8 @@ extern crate enum_primitive;
 extern crate bitflags;
 
 #[macro_use]
+mod log;
+#[macro_use]
 mod utils;
 mod arm7tdmi;
 mod interconnect;
