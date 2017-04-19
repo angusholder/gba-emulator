@@ -1,5 +1,6 @@
 use utils::{ Buffer, Cycle };
 use interconnect::{ IrqFlags, LCD_VBLANK, LCD_HBLANK, LCD_VCOUNTER_MATCH };
+use log::*;
 
 const ADDR_UPPER_MASK: u32 = 0xFF00_0000;
 
@@ -167,7 +168,7 @@ impl Renderer {
 
     pub fn write_dispcnt(&mut self, value: u16) {
         self.control = DisplayControlReg::from(value);
-        println!("Setting DISPCNT = {:?}", self.control);
+        note!(GPU, "Setting DISPCNT = {:?}", self.control);
     }
 
     pub fn read_dispstat(&self) -> u16 {
@@ -180,7 +181,7 @@ impl Renderer {
             vcount_irq_enable: self.vcount_irq_enable,
             vcount_setting: self.vcount_setting,
         }.into();
-        println!("Reading DISPSTAT = {:?}", ret);
+        note!(GPU, "Reading DISPSTAT = {:?}", ret);
         ret
     }
 
@@ -190,11 +191,11 @@ impl Renderer {
         self.hblank_irq_enable = stat.hblank_irq_enable;
         self.vcount_irq_enable = stat.vcount_irq_enable;
         self.vcount_setting = stat.vcount_setting;
-        println!("Setting DISPSTAT: vblank_irq={}, hblank_irq={}, vcount_irq={}, vcount_setting={}",
-                 self.vblank_irq_enable,
-                 self.hblank_irq_enable,
-                 self.vcount_irq_enable,
-                 self.vcount_setting);
+        note!(GPU, "Setting DISPSTAT: vblank_irq={}, hblank_irq={}, vcount_irq={}, vcount_setting={}",
+              self.vblank_irq_enable,
+              self.hblank_irq_enable,
+              self.vcount_irq_enable,
+              self.vcount_setting);
     }
 
     pub fn palette_write8(&mut self, addr: u32, value: u8) -> Cycle {

@@ -2,15 +2,16 @@ use std::fmt;
 use std::str::FromStr;
 use std::ascii::AsciiExt;
 
-static mut LOG_LEVELS: [LogLevel; 12] = [LogLevel::None; 12];
+pub use self::LogLevel::{ Trace, Note, Warn, Error };
+pub use self::LogKind::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LogLevel {
-    None = 0,
-    Trace = 1,
-    Note = 2,
-    Warn = 3,
-    Error = 4,
+    Trace = 0,
+    Note = 1,
+    Warn = 2,
+    Error = 3,
+    None = 4,
 }
 
 impl fmt::Display for LogLevel {
@@ -45,6 +46,7 @@ pub enum LogKind {
     CPU,
     GPU,
     SPU,
+    IO,
     DMA0,
     DMA1,
     DMA2,
@@ -62,6 +64,7 @@ impl fmt::Display for LogKind {
             LogKind::CPU => "CPU",
             LogKind::GPU => "GPU",
             LogKind::SPU => "SPU",
+            LogKind::IO => "IO",
             LogKind::DMA0 => "DMA0",
             LogKind::DMA1 => "DMA1",
             LogKind::DMA2 => "DMA2",
@@ -83,6 +86,7 @@ impl FromStr for LogKind {
             "CPU" => LogKind::CPU,
             "GPU" => LogKind::GPU,
             "SPU" => LogKind::SPU,
+            "IO" => LogKind::IO,
             "DMA0" => LogKind::DMA0,
             "DMA1" => LogKind::DMA1,
             "DMA2" => LogKind::DMA2,
@@ -99,9 +103,7 @@ impl FromStr for LogKind {
 
 macro_rules! log_ {
     ($level:expr, $kind:expr, $fmt:expr, $($arg:expr),*) => {
-        if $level >= get_log_level($kind) {
-            #[allow(unused_imports)] use LogLevel::{ Trace, Note, Warn, Error };
-            #[allow(unused_imports)] use LogKind::*;
+        if $level >= ::log::get_log_level($kind) {
             println!("{:>5}[{:<4}]: {}", $level, $kind, format_args!($fmt, $($arg),*));
         }
     }
@@ -112,7 +114,7 @@ macro_rules! trace {
         trace!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(LogLevel::Trace, $kind, $fmt, $($arg),*);
+        log_!(::log::LogLevel::Trace, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -121,7 +123,7 @@ macro_rules! note {
         note!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(LogLevel::Note, $kind, $fmt, $($arg),*);
+        log_!(::log::LogLevel::Note, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -130,7 +132,7 @@ macro_rules! warn {
         warn!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(LogLevel::Warn, $kind, $fmt, $($arg),*);
+        log_!(::log::LogLevel::Warn, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -139,19 +141,29 @@ macro_rules! error {
         error!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(LogLevel::Error, $kind, $fmt, $($arg),*);
+        log_!(::log::LogLevel::Error, $kind, $fmt, $($arg),*);
         unreachable!();
     }
 }
 
+static mut MINIMUM_LOG_LEVELS: [LogLevel; 12] = [LogLevel::Warn; 12];
+
 pub fn get_log_level(kind: LogKind) -> LogLevel {
     unsafe {
-        LOG_LEVELS[kind as usize]
+        MINIMUM_LOG_LEVELS[kind as usize]
     }
 }
 
 pub fn set_log_level(kind: LogKind, level: LogLevel) {
     unsafe {
-        LOG_LEVELS[kind as usize] = level;
+        MINIMUM_LOG_LEVELS[kind as usize] = level;
+    }
+}
+
+pub fn set_all_log_levels(level: LogLevel) {
+    unsafe {
+        for l in MINIMUM_LOG_LEVELS.iter_mut() {
+            *l = level;
+        }
     }
 }

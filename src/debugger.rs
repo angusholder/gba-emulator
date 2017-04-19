@@ -28,7 +28,7 @@ fn opt_int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<Option<N>>
         if arg.starts_with("0x") {
             Num::from_str_radix(&arg[2..], 16)
         } else {
-            Num::from_str_radix(&arg[2..], 10)
+            Num::from_str_radix(arg, 10)
         }.map(|n| Some(n)).map_err(|_| CommandError::InvalidInteger)
     } else {
         Ok(None)
@@ -140,6 +140,7 @@ pub enum Command {
     StoreW(u32, u32),
 
     Log(LogLevel, Vec<LogKind>),
+    LogAll(LogLevel),
 
     ListRegs,
 
@@ -178,6 +179,10 @@ commands! {
             s.parse().map_err(|_| CommandError::InvalidIdentifier)
         }).collect::<CommandResult<Vec<LogKind>>>()?;
         Command::Log(level, kinds)
+    },
+    "logall" => (level_ident: ident) = {
+        let level = level_ident.parse::<LogLevel>().map_err(|_| CommandError::InvalidIdentifier)?;
+        Command::LogAll(level)
     },
 
     "quit" | "exit" => () = Command::Exit
@@ -425,6 +430,9 @@ impl Debugger {
                 for kind in kinds {
                     log::set_log_level(kind, level);
                 }
+            }
+            LogAll(level) => {
+                log::set_all_log_levels(level);
             }
 
             Exit => {

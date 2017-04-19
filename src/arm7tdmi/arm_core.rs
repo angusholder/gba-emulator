@@ -7,6 +7,7 @@ use interconnect::Interconnect;
 use utils::Cycle;
 use super::core_common::*;
 use num::FromPrimitive;
+use log::*;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
     debug_assert!(arm.regs[REG_PC] & 3 == 0);
@@ -23,8 +24,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
 type ArmOp = fn(&mut Arm7TDMI, &mut Interconnect, u32) -> StepEvent;
 
 fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) -> StepEvent {
-    println!("WARNING: Unhandled instruction {:08X}", op);
-    StepEvent::None
+    error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
 }
 
 fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: u32) -> StepEvent {

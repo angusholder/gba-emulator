@@ -135,12 +135,13 @@ macro_rules! read_io_method {
                     let _offset = $case_addr&!mask | addr&!mask;
                     let value: $T = $getter(self);
                     result |= foo!(from: $T, to: $io_type, value, _offset);
-                    println!("Reading 0x{:X} from {} (0x{:X})", value, stringify!($case_addr), $case_addr);
+                    trace!(IO, "Reading 0x{:X} from {} (0x{:X})",
+                           value, stringify!($case_addr), $case_addr);
                 }
             })+
 
             if bytes_handled < size!($io_type) {
-                println!("WARNING: Unhandled ioread{} at 0x400_0{:03X}", 8*size!($io_type), addr & 0xFFF);
+                warn!(IO, "Unhandled ioread{} at 0x400_0{:03X}", 8*size!($io_type), addr & 0xFFF);
             }
 
             result
@@ -170,12 +171,12 @@ macro_rules! write_io_method {
                     };
                     write_cache!(self.io_cache, $T, addr & 0xFFF, new);
                     $setter(self, new);
-                    println!("Writing 0x{:X} to {} (0x{:X})", new, stringify!($case_addr), $case_addr);
+                    trace!(IO, "Writing 0x{:X} to {} (0x{:X})", new, stringify!($case_addr), $case_addr);
                 }
             })+
 
             if bytes_handled < size!($io_type) {
-                println!("WARNING: Unhandled iowrite{} at 0x400_0{:03X} of {:X}", 8*size!($io_type), addr & 0xFFF, value);
+                warn!(IO, "Unhandled iowrite{} at 0x400_0{:03X} of {:X}", 8*size!($io_type), addr & 0xFFF, value);
             }
         }
     }

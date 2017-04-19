@@ -2,6 +2,7 @@ use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
 use timer::{ Timer, TimerUnit, TimerState };
 use gamepak::GamePak;
+use log::*;
 
 const ROM_START: u32 = 0x0000_0000;
 const ROM_SIZE: u32 = 0x4000;
@@ -387,20 +388,20 @@ impl Interconnect {
 }
 
 macro_rules! unreadable {
-    ($reg:expr) => {
+    ($kind:ident, $reg:expr) => {
         |_ic: &Interconnect| {
             let reg_name = stringify!($reg);
-            println!("Tried to read the write-only {} (at 0x{:X}).", reg_name, $reg);
+            warn!($kind, "Tried to read the write-only {} (at 0x{:X}).", reg_name, $reg);
             0
         }
     }
 }
 
 macro_rules! unwriteable {
-    ($reg:expr) => {
+    ($kind:ident, $reg:expr) => {
         |_ic: &mut Interconnect, value| {
             let reg_name = stringify!($reg);
-            println!("Tried to write {:X} to read-only {} (at 0x{:X})", value, reg_name, $reg);
+            warn!($kind, "Tried to write {:X} to read-only {} (at 0x{:X})", value, reg_name, $reg);
         }
     }
 }
@@ -457,8 +458,7 @@ impl_io_map! {
         },
         write => |ic: &mut Interconnect, value: u16| {
             ic.interrupt_enable = IrqFlags::from_bits_truncate(value);
-            println!("Setting interrupt_enable = {:?}",
-                     ic.interrupt_enable);
+            trace!(CPU, "Setting interrupt_enable = {:?}", ic.interrupt_enable);
         }
     }
 
@@ -469,8 +469,7 @@ impl_io_map! {
         write => |ic: &mut Interconnect, value: u16| {
             let value = IrqFlags::from_bits_truncate(value);
             ic.interrupt_flags.remove(value);
-            println!("Setting interrupt_flags = {:?}",
-                     ic.interrupt_flags);
+            trace!(CPU, "Setting interrupt_flags = {:?}", ic.interrupt_flags);
         }
     }
 
@@ -496,8 +495,7 @@ impl_io_map! {
             ic.master_interrupt_enable as u32
         },
         write => |ic: &mut Interconnect, value| {
-            println!("Setting master_interrupt_enable = {}",
-                     ic.master_interrupt_enable);
+            trace!(CPU, "Setting master_interrupt_enable = {}", ic.master_interrupt_enable);
             ic.master_interrupt_enable = (value & 1) != 0;
         }
     }
@@ -515,7 +513,7 @@ impl_io_map! {
         read => |ic: &Interconnect| {
             ic.renderer.scanline as u16
         },
-        write => unwriteable!(REG_VCOUNT)
+        write => unwriteable!(GPU, REG_VCOUNT)
     }
 
     (u16, REG_BG0CNT ) { // 2    R/W   BG0 Control
@@ -552,91 +550,91 @@ impl_io_map! {
     }
 
     (u16, REG_BG0HOFS) { // 2    W     BG0 X-Offset
-        read => unreadable!(REG_BG0HOFS),
+        read => unreadable!(GPU, REG_BG0HOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[0].x_offset = value & 0x1FF
     }
     (u16, REG_BG0VOFS) { // 2    W     BG0 Y-Offset
-        read => unreadable!(REG_BG0VOFS),
+        read => unreadable!(GPU, REG_BG0VOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[0].y_offset = value & 0x1FF
     }
     (u16, REG_BG1HOFS) { // 2    W     BG1 X-Offset
-        read => unreadable!(REG_BG1HOFS),
+        read => unreadable!(GPU, REG_BG1HOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[1].x_offset = value & 0x1FF
     }
     (u16, REG_BG1VOFS) { // 2    W     BG1 Y-Offset
-        read => unreadable!(REG_BG1VOFS),
+        read => unreadable!(GPU, REG_BG1VOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[1].y_offset = value & 0x1FF
     }
     (u16, REG_BG2HOFS) { // 2    W     BG2 X-Offset
-        read => unreadable!(REG_BG2HOFS),
+        read => unreadable!(GPU, REG_BG2HOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].x_offset = value & 0x1FF
     }
     (u16, REG_BG2VOFS) { // 2    W     BG2 Y-Offset
-        read => unreadable!(REG_BG2VOFS),
+        read => unreadable!(GPU, REG_BG2VOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].y_offset = value & 0x1FF
     }
     (u16, REG_BG3HOFS) { // 2    W     BG3 X-Offset
-        read => unreadable!(REG_BG3HOFS),
+        read => unreadable!(GPU, REG_BG3HOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].x_offset = value & 0x1FF
     }
     (u16, REG_BG3VOFS) { // 2    W     BG3 Y-Offset
-        read => unreadable!(REG_BG3VOFS),
+        read => unreadable!(GPU, REG_BG3VOFS),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].y_offset = value & 0x1FF
     }
 
     (u16, REG_BG2PA  ) { // 2    W     BG2 Rotation/Scaling Parameter A (dx)
-        read => unreadable!(REG_BG2PA),
+        read => unreadable!(GPU, REG_BG2PA),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dx = value
     }
     (u16, REG_BG2PB  ) { // 2    W     BG2 Rotation/Scaling Parameter B (dmx)
-        read => unreadable!(REG_BG2PB),
+        read => unreadable!(GPU, REG_BG2PB),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dmx = value
     }
     (u16, REG_BG2PC  ) { // 2    W     BG2 Rotation/Scaling Parameter C (dy)
-        read => unreadable!(REG_BG2PC),
+        read => unreadable!(GPU, REG_BG2PC),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dy = value
     }
     (u16, REG_BG2PD  ) { // 2    W     BG2 Rotation/Scaling Parameter D (dmy)
-        read => unreadable!(REG_BG2PD),
+        read => unreadable!(GPU, REG_BG2PD),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dmy = value
     }
     (u32, REG_BG2X   ) { // 4    W     BG2 Reference Point X-Coordinate
-        read => unreadable!(REG_BG2X),
+        read => unreadable!(GPU, REG_BG2X),
         write => |ic: &mut Interconnect, value| {
             ic.renderer.bg[2].x_ref = sign_extend(value, 28);
         }
     }
     (u32, REG_BG2Y   ) { // 4    W     BG2 Reference Point Y-Coordinate
-        read => unreadable!(REG_BG2Y),
+        read => unreadable!(GPU, REG_BG2Y),
         write => |ic: &mut Interconnect, value| {
             ic.renderer.bg[2].y_ref = sign_extend(value, 28);
         }
     }
 
     (u16, REG_BG3PA  ) { // 2    W     BG3 Rotation/Scaling Parameter A (dx)
-        read => unreadable!(REG_BG3PA),
+        read => unreadable!(GPU, REG_BG3PA),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dx = value
     }
     (u16, REG_BG3PB  ) { // 2    W     BG3 Rotation/Scaling Parameter B (dmx)
-        read => unreadable!(REG_BG3PB),
+        read => unreadable!(GPU, REG_BG3PB),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dmx = value
     }
     (u16, REG_BG3PC  ) { // 2    W     BG3 Rotation/Scaling Parameter C (dy)
-        read => unreadable!(REG_BG3PC),
+        read => unreadable!(GPU, REG_BG3PC),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dy = value
     }
     (u16, REG_BG3PD  ) { // 2    W     BG3 Rotation/Scaling Parameter D (dmy)
-        read => unreadable!(REG_BG3PD),
+        read => unreadable!(GPU, REG_BG3PD),
         write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dmy = value
     }
     (u32, REG_BG3X   ) { // 4    W     BG3 Reference Point X-Coordinate
-        read => unreadable!(REG_BG3X),
+        read => unreadable!(GPU, REG_BG3X),
         write => |ic: &mut Interconnect, value| {
             ic.renderer.bg[3].x_ref = sign_extend(value, 28);
         }
     }
     (u32, REG_BG3Y   ) { // 4    W     BG3 Reference Point Y-Coordinate
-        read => unreadable!(REG_BG3Y),
+        read => unreadable!(GPU, REG_BG3Y),
         write => |ic: &mut Interconnect, value| {
             ic.renderer.bg[3].y_ref = sign_extend(value, 28);
         }
