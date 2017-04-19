@@ -50,8 +50,10 @@ impl GamePak {
     }
 
     pub fn read16(&self, addr: u32) -> (Cycle, u16) {
-        let seq = self.next_seq_addr.get() == addr;
-        debug_assert!(addr & 1 == 0);
+        // If we are loading from the address that comes after the previous one and aren't
+        // crossing a page boundary, we get the faster sequential load timing.
+        let seq = self.next_seq_addr.get() == addr && addr & GAMEPAK_PAGE_MASK != 0;
+        assert!(addr & 1 == 0);
 
         let cycle = match addr >> 24 {
             0x8 | 0x9 if seq => self.wait_states[0].seq,
@@ -69,7 +71,7 @@ impl GamePak {
             // When out of bounds, the data read is just the last thing on the bus, ie the address.
             (addr >> 1 & 0xFFFF) as u16
         };
-        self.next_seq_addr.set((addr + 2) & !1);
+        self.next_seq_addr.set(addr + 2);
 
         (cycle, read)
     }
