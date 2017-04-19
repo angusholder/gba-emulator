@@ -433,14 +433,6 @@ impl<T: Ord + Copy> OrderedSet<T> {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Cycle(pub i32);
 
-macro_rules! add_cycles {
-    ($cycles:expr, $load_expr:expr) => {{
-        let (cycles_used, read) = $load_expr;
-        $cycles += cycles_used;
-        read
-    }}
-}
-
 impl Add for Cycle {
     type Output = Cycle;
     fn add(self, right: Cycle) -> Cycle {

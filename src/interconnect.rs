@@ -31,13 +31,13 @@ const IO_TIMING_U32: Cycle = Cycle(1);
 
 macro_rules! unhandled_read {
     ($addr:expr) => {
-        panic!("Unhandled read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF)
+        error!(IO, "Unhandled read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF)
     }
 }
 
 macro_rules! unhandled_write {
     ($addr:expr, $value:expr) => {
-        panic!("Unhandled write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
+        error!(IO, "Unhandled write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
     }
 }
 
@@ -46,6 +46,7 @@ pub struct Interconnect {
     pub prefetch: [u32; 2],
 
     pc_inside_bios: bool,
+    pub cycles: Cycle,
 
     timers: [Timer; 4],
     renderer: Renderer,
@@ -80,6 +81,7 @@ impl Interconnect {
             prefetch: Default::default(),
 
             pc_inside_bios: true,
+            cycles: Cycle(0),
 
             timers: [
                 Timer::new(TimerUnit::Tm0),
@@ -175,7 +177,12 @@ impl Interconnect {
         signal
     }
 
-    pub fn read8(&self, addr: u32) -> (Cycle, u8) {
+    pub fn add_internal_cycles(&mut self, cycles: i32) {
+        // TODO: Do GamePak prefetch buffer
+        self.cycles += cycles;
+    }
+
+    pub fn debug_read8(&self, addr: u32) -> (Cycle, u8) {
         match addr >> 24 {
             0x0 | 0x1 => { // rom
                 // TODO: Handle out of bounds, currently we panic
@@ -212,7 +219,7 @@ impl Interconnect {
         }
     }
 
-    pub fn read16(&self, addr: u32) -> (Cycle, u16) {
+    pub fn debug_read16(&self, addr: u32) -> (Cycle, u16) {
         if addr & 1 != 0 { panic!("Unaligned halfword read at 0x{:08X}", addr); }
 
         match addr >> 24 {
@@ -251,7 +258,7 @@ impl Interconnect {
         }
     }
 
-    pub fn read32(&self, addr: u32) -> (Cycle, u32) {
+    pub fn debug_read32(&self, addr: u32) -> (Cycle, u32) {
         if addr & 3 != 0 { panic!("Unaligned word read at 0x{:08X}", addr); }
 
         match addr >> 24 {
@@ -290,7 +297,7 @@ impl Interconnect {
         }
     }
 
-    pub fn write8(&mut self, addr: u32, value: u8) -> Cycle {
+    pub fn debug_write8(&mut self, addr: u32, value: u8) -> Cycle {
         match addr >> 24 {
             0x2 => { // ewram
                 self.ewram.write8((addr - EWRAM_START) & EWRAM_MASK, value);
@@ -318,7 +325,7 @@ impl Interconnect {
         }
     }
 
-    pub fn write16(&mut self, addr: u32, value: u16) -> Cycle {
+    pub fn debug_write16(&mut self, addr: u32, value: u16) -> Cycle {
         if addr & 1 != 0 { panic!("Unaligned halfword write at 0x{:08X} of 0x{:08X}", addr, value); }
         match addr >> 24 {
             0x2 => { // ewram
@@ -347,7 +354,7 @@ impl Interconnect {
         }
     }
 
-    pub fn write32(&mut self, addr: u32, value: u32) -> Cycle {
+    pub fn debug_write32(&mut self, addr: u32, value: u32) -> Cycle {
         if addr & 3 != 0 { panic!("Unaligned word write at 0x{:08X} of 0x{:08X}", addr, value); }
         match addr >> 24 {
             0x2 => { // ewram
@@ -376,12 +383,41 @@ impl Interconnect {
         }
     }
 
-    pub fn exec_thumb_slow(&mut self, addr: u32) -> (Cycle, u16) {
+    pub fn read8(&mut self, addr: u32) -> u8 {
+        let (cycle, read) = self.debug_read8(addr);
+        self.cycles += cycle;
+        read
+    }
+    pub fn read16(&mut self, addr: u32) -> u16 {
+        let (cycle, read) = self.debug_read16(addr);
+        self.cycles += cycle;
+        read
+    }
+    pub fn read32(&mut self, addr: u32) -> u32 {
+        let (cycle, read) = self.debug_read32(addr);
+        self.cycles += cycle;
+        read
+    }
+
+    pub fn write8(&mut self, addr: u32, value: u8) {
+        let cycle = self.debug_write8(addr, value);
+        self.cycles += cycle;
+    }
+    pub fn write16(&mut self, addr: u32, value: u16) {
+        let cycle = self.debug_write16(addr, value);
+        self.cycles += cycle;
+    }
+    pub fn write32(&mut self, addr: u32, value: u32) {
+        let cycle = self.debug_write32(addr, value);
+        self.cycles += cycle;
+    }
+
+    pub fn exec_thumb_slow(&mut self, addr: u32) -> u16 {
         self.pc_inside_bios = addr >> 24 == 0;
         self.read16(addr)
     }
 
-    pub fn exec_arm_slow(&mut self, addr: u32) -> (Cycle, u32) {
+    pub fn exec_arm_slow(&mut self, addr: u32) -> u32 {
         self.pc_inside_bios = addr >> 24 == 0;
         self.read32(addr)
     }

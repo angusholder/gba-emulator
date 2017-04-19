@@ -140,10 +140,10 @@ macro_rules! error {
     ($kind:expr, $fmt:expr) => {
         error!($kind, $fmt,);
     };
-    ($kind:expr, $fmt:expr, $($arg:expr),*) => {
+    ($kind:expr, $fmt:expr, $($arg:expr),*) => {{
         log_!(::log::LogLevel::Error, $kind, $fmt, $($arg),*);
         unreachable!();
-    }
+    }}
 }
 
 static mut MINIMUM_LOG_LEVELS: [LogLevel; 12] = [LogLevel::Warn; 12];

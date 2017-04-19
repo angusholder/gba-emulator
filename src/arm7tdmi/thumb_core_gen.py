@@ -26,7 +26,7 @@ ALU_OPS = {
     let result = barrel_shift_lsl_set_flags(arm, rd, rs);
     set_zn(arm, result);
     arm.regs[rd_index] = result;
-    cycles += 1;
+    interconnect.add_internal_cycles(1);
 '''),
 
 0b0011: (
@@ -35,7 +35,7 @@ ALU_OPS = {
     let result = barrel_shift_lsr_set_flags(arm, rd, rs);
     set_zn(arm, result);
     arm.regs[rd_index] = result;
-    cycles += 1;
+    interconnect.add_internal_cycles(1);
 '''),
 
 0b0100: (
@@ -44,7 +44,7 @@ ALU_OPS = {
     let result = barrel_shift_asr_set_flags(arm, rd, rs);
     set_zn(arm, result);
     arm.regs[rd_index] = result;
-    cycles += 1;
+    interconnect.add_internal_cycles(1);
 '''),
 
 0b0101: (
@@ -71,7 +71,7 @@ ALU_OPS = {
     let result = barrel_shift_ror_set_flags(arm, rd, rs);
     set_zn(arm, result);
     arm.regs[rd_index] = result;
-    cycles += 1;
+    interconnect.add_internal_cycles(1);
 '''),
 
 0b1000: (
@@ -118,7 +118,7 @@ ALU_OPS = {
     '''
     let result = rd.wrapping_mul(rs);
     set_zn(arm, result);
-    cycles += (rs.leading_zeros() / 8) as i32;
+    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as i32);
     // MUL sets c and v to meaningless values, so we don't need to touch them.
     arm.regs[rd_index] = result;
 '''),
@@ -171,8 +171,8 @@ LOAD_OP_REG_OFFSET = '''
     let ro = arm.regs[(op >> 6 & 7) as usize];
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
-    arm.regs[(op & 7) as usize] = add_cycles!(cycles, interconnect.{load_fn}(addr)) as {T} as u32;
-    cycles += 1; // internal cycle for address calculation
+    arm.regs[(op & 7) as usize] = interconnect.{load_fn}(addr) as {T} as u32;
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
 '''
 
 STORE_OP_REG_OFFSET = '''
@@ -180,7 +180,7 @@ STORE_OP_REG_OFFSET = '''
     let ro = arm.regs[(op >> 6 & 7) as usize];
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
-    cycles += interconnect.{store_fn}(addr, arm.regs[(op & 7) as usize] as {T});
+    interconnect.{store_fn}(addr, arm.regs[(op & 7) as usize] as {T});
 '''
 
 LOAD_OP_IMMED_OFFSET = '''
@@ -188,8 +188,8 @@ LOAD_OP_IMMED_OFFSET = '''
     let offset = ((op >> 6 & 0x1F) as u32) * mem::size_of::<{T}>() as u32;
     let addr = rb.wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    arm.regs[(op & 7) as usize] = add_cycles!(cycles, interconnect.{load_fn}(addr)) as {T} as u32;
-    cycles += 1; // internal cycle for address calculation
+    arm.regs[(op & 7) as usize] = interconnect.{load_fn}(addr) as {T} as u32;
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
 '''
 
 STORE_OP_IMMED_OFFSET = '''
@@ -197,7 +197,7 @@ STORE_OP_IMMED_OFFSET = '''
     let offset = ((op >> 6 & 0x1F) as u32) * mem::size_of::<{T}>() as u32;
     let addr = rb.wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    cycles += interconnect.{store_fn}(addr, arm.regs[(op & 7) as usize] as {T});
+    interconnect.{store_fn}(addr, arm.regs[(op & 7) as usize] as {T});
 '''
 
 FUNCTIONS = {
@@ -321,8 +321,8 @@ FUNCTIONS = {
     let offset = ((op & 0xFF) << 2) as u32;
     let addr = (arm.regs[REG_PC] & !2) + offset;
     check_watchpoint!(arm, addr);
-    arm.regs[(op >> 8 & 7) as usize] = add_cycles!(cycles, interconnect.read32(addr));
-    cycles += 1; // internal cycle for address calculation
+    arm.regs[(op >> 8 & 7) as usize] = interconnect.read32(addr);
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
 ''',
 
 'str_sprel_immoffset': '''
@@ -330,14 +330,14 @@ FUNCTIONS = {
     let offset = ((op & 0xFF) << 2) as u32;
     let addr = arm.regs[REG_SP].wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    cycles += interconnect.write32(addr, rd);
+    interconnect.write32(addr, rd);
 ''',
 'ldr_sprel_immoffset': '''
     let offset = ((op & 0xFF) << 2) as u32;
     let addr = arm.regs[REG_SP].wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    arm.regs[(op >> 8 & 7) as usize] = add_cycles!(cycles, interconnect.read32(addr));
-    cycles += 1; // internal cycle for address calculation
+    arm.regs[(op >> 8 & 7) as usize] = interconnect.read32(addr);
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
 ''',
 
 'add_imm_pcrel': '''
@@ -368,14 +368,14 @@ FUNCTIONS = {
     for i in 0..8 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, sp);
-            cycles += interconnect.write32(sp, arm.regs[i]);
+            interconnect.write32(sp, arm.regs[i]);
             sp += 4;
         }
     }
 
     if store_lr {
         check_watchpoint!(arm, sp);
-        cycles += interconnect.write32(sp, arm.regs[REG_LR]);
+        interconnect.write32(sp, arm.regs[REG_LR]);
     }
 ''',
 'pop': '''
@@ -386,14 +386,14 @@ FUNCTIONS = {
     for i in 0..8 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, sp);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(sp));
+            arm.regs[i] = interconnect.read32(sp);
             sp += 4;
         }
     }
 
     if load_pc {
         check_watchpoint!(arm, sp);
-        let addr = add_cycles!(cycles, interconnect.read32(sp));
+        let addr = interconnect.read32(sp);
         sp += 4;
         arm.branch_to(interconnect, addr & !1);
     }
@@ -408,7 +408,7 @@ FUNCTIONS = {
     for i in 0..8 {
         if op & (1 << i) != 0 {
             check_watchpoint!(arm, rb);
-            cycles += interconnect.write32(rb, arm.regs[i]);
+            interconnect.write32(rb, arm.regs[i]);
             rb += 4;
         }
     }
@@ -422,7 +422,7 @@ FUNCTIONS = {
     for i in 0..8 {
         if op & (1 << i) != 0 {
             check_watchpoint!(arm, rb);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(rb));
+            arm.regs[i] = interconnect.read32(rb);
             rb += 4;
         }
     }
@@ -654,11 +654,8 @@ def decode(i):
 FN_TEMPLATE = '''\
 // {example}
 fn op_{ins_name}(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {{
-    let mut cycles = Cycle(0);
-
 {fn_body}
 
-    arm.cycles += cycles;
     StepEvent::None
 }}
 '''

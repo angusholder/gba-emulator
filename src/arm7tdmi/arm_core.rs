@@ -4,7 +4,6 @@ use std::cmp;
 
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
-use utils::Cycle;
 use super::core_common::*;
 use num::FromPrimitive;
 use log::*;
@@ -38,8 +37,6 @@ fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: u32) -> StepEv
 }
 
 fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let mut cycles = Cycle(1); // 1 internal cycle
-
     let rm_index = (op & 0xF) as usize;
     let rd_index = (op >> 12 & 0xF) as usize;
     let rn_index = (op >> 16 & 0xF) as usize;
@@ -53,17 +50,15 @@ fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepE
     let rm = arm.regs[rm_index];
 
     check_watchpoint!(arm, addr);
-    let old = add_cycles!(cycles, interconnect.read32(addr));
+    let old = interconnect.read32(addr);
     arm.regs[rd_index] = old;
-    cycles += interconnect.write32(addr, rm);
+    interconnect.write32(addr, rm);
 
-    arm.cycles += cycles;
+    interconnect.add_internal_cycles(1);
     StepEvent::None
 }
 
 fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let mut cycles = Cycle(1); // 1 internal cycle
-
     let rm_index = (op & 0xF) as usize;
     let rd_index = (op >> 12 & 0xF) as usize;
     let rn_index = (op >> 16 & 0xF) as usize;
@@ -77,11 +72,11 @@ fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> Step
     let rm = arm.regs[rm_index];
 
     check_watchpoint!(arm, addr);
-    let old = add_cycles!(cycles, interconnect.read8(addr)) as u32;
+    let old = interconnect.read8(addr) as u32;
     arm.regs[rd_index] = old;
-    cycles += interconnect.write8(addr, rm as u8);
+    interconnect.write8(addr, rm as u8);
 
-    arm.cycles += cycles;
+    interconnect.add_internal_cycles(1);
     StepEvent::None
 }
 

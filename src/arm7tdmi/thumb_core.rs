@@ -4,7 +4,6 @@ use std::mem;
 
 use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
 use interconnect::Interconnect;
-use utils::Cycle;
 use super::core_common::*;
 
 pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {

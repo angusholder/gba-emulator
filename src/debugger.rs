@@ -225,11 +225,11 @@ impl Debugger {
         let thumb_mode = self.arm.cpsr.thumb_mode;
         let addr = self.arm.current_pc();
         if thumb_mode {
-            let (_, op) = self.interconnect.exec_thumb_slow(addr);
+            let op = self.interconnect.exec_thumb_slow(addr);
             let dis = disassemble_thumb_opcode(op as u32, addr);
             println!("0x{:07X}: ({:04X}) {}", addr, op, dis);
         } else {
-            let (_, op) = self.interconnect.exec_arm_slow(addr);
+            let op = self.interconnect.exec_arm_slow(addr);
             let dis = disassemble_arm_opcode(op, addr);
             println!("0x{:07X}: ({:08X}) {}", addr, op, dis);
         };
@@ -400,26 +400,26 @@ impl Debugger {
             }
 
             LoadB(addr) => {
-                let val = self.interconnect.read8(addr).1;
+                let val = self.interconnect.debug_read8(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadH(addr) => {
-                let val = self.interconnect.read16(addr).1;
+                let val = self.interconnect.debug_read16(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadW(addr) => {
-                let val = self.interconnect.read32(addr).1;
+                let val = self.interconnect.debug_read32(addr).1;
                 println!("{} ({:08X})", val, val);
             }
 
             StoreB(addr, val) => {
-                self.interconnect.write8(addr, val);
+                self.interconnect.debug_write8(addr, val);
             }
             StoreH(addr, val) => {
-                self.interconnect.write16(addr, val);
+                self.interconnect.debug_write16(addr, val);
             }
             StoreW(addr, val) => {
-                self.interconnect.write32(addr, val);
+                self.interconnect.debug_write32(addr, val);
             }
 
             ListRegs => {

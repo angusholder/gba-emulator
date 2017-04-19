@@ -46,7 +46,7 @@ pub struct Timer {
     unit: TimerUnit,
 
     scale: TimerScale,
-    reload_value: u16,
+    pub reload_value: u16,
     pub cascade_timing: bool,
     pub irq_on_overflow: bool,
     pub state: TimerState,

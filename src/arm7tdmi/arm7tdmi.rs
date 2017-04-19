@@ -2,7 +2,7 @@ use std::fmt;
 
 use num::FromPrimitive;
 use interconnect::Interconnect;
-use utils::{ OrderedSet, Cycle };
+use utils::OrderedSet;
 
 enum_from_primitive! {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -165,7 +165,6 @@ pub const REG_PC: usize = 15;
 pub struct Arm7TDMI {
     pub regs: [u32; 16],
     pub cpsr: StatusRegister,
-    pub cycles: Cycle,
 
     // Supervisor Mode:
     svc_sp: u32,
@@ -206,7 +205,6 @@ impl Arm7TDMI {
         Arm7TDMI {
             regs: Default::default(),
             cpsr: Default::default(),
-            cycles: Cycle(0),
 
             svc_sp: 0,
             svc_lr: 0,
@@ -311,19 +309,17 @@ impl Arm7TDMI {
 
     pub fn branch_to(&mut self, interconnect: &mut Interconnect, addr: u32) {
         let step = self.get_op_size();
-        let mut cycles = Cycle(0);
         if self.cpsr.thumb_mode {
             debug_assert!(addr & 1 == 0);
-            interconnect.prefetch[0] = add_cycles!(cycles, interconnect.exec_thumb_slow(addr)) as u32;
-            interconnect.prefetch[1] = add_cycles!(cycles, interconnect.exec_thumb_slow(addr + step)) as u32;
+            interconnect.prefetch[0] = interconnect.exec_thumb_slow(addr) as u32;
+            interconnect.prefetch[1] = interconnect.exec_thumb_slow(addr + step) as u32;
             self.regs[REG_PC] = addr + step;
         } else {
             debug_assert!(addr & 3 == 0);
-            interconnect.prefetch[0] = add_cycles!(cycles, interconnect.exec_arm_slow(addr));
-            interconnect.prefetch[1] = add_cycles!(cycles, interconnect.exec_arm_slow(addr + step));
+            interconnect.prefetch[0] = interconnect.exec_arm_slow(addr);
+            interconnect.prefetch[1] = interconnect.exec_arm_slow(addr + step);
             self.regs[REG_PC] = addr + step;
         }
-        self.cycles += cycles;
     }
 
     pub fn branch_exchange(&mut self, interconnect: &mut Interconnect, addr: u32) {
@@ -393,7 +389,7 @@ impl Arm7TDMI {
         let op = interconnect.prefetch[0];
         let addr = self.current_pc();
 
-        let last_cycles = self.cycles;
+        let last_cycles = interconnect.cycles;
 
         if self.breakpoints.contains(addr) {
             return StepEvent::TriggerBreakpoint(addr);
@@ -404,9 +400,9 @@ impl Arm7TDMI {
 
         interconnect.prefetch[0] = interconnect.prefetch[1];
         let next_op = if self.cpsr.thumb_mode {
-            add_cycles!(self.cycles, interconnect.exec_thumb_slow(self.regs[REG_PC])) as u32
+            interconnect.exec_thumb_slow(self.regs[REG_PC]) as u32
         } else {
-            add_cycles!(self.cycles, interconnect.exec_arm_slow(self.regs[REG_PC]))
+            interconnect.exec_arm_slow(self.regs[REG_PC])
         };
 
         interconnect.prefetch[1] = next_op;
@@ -417,7 +413,7 @@ impl Arm7TDMI {
             step_arm(self, interconnect, op)
         };
 
-        let cycles = self.cycles - last_cycles;
+        let cycles = interconnect.cycles - last_cycles;
         let trigger_irq = interconnect.step_cycles(cycles);
         if trigger_irq && !self.cpsr.irq_disable {
             self.signal_irq(interconnect);

@@ -109,13 +109,13 @@ LDM = {
     for i in 0..15 { // Post-increment
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            arm.regs[i] = interconnect.read32(addr);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
-        let target = add_cycles!(cycles, interconnect.read32(addr));
+        let target = interconnect.read32(addr);
         arm.branch_to(interconnect, target);
         addr += 4;
     }\
@@ -125,13 +125,13 @@ LDM = {
         if reglist & (1 << i) != 0 {
             addr += 4;
             check_watchpoint!(arm, addr);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            arm.regs[i] = interconnect.read32(addr);
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         addr += 4;
         check_watchpoint!(arm, addr);
-        let target = add_cycles!(cycles, interconnect.read32(addr));
+        let target = interconnect.read32(addr);
         arm.branch_to(interconnect, target);
     }\
 '''),
@@ -141,13 +141,13 @@ LDM = {
     for i in 0..15 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            arm.regs[i] = interconnect.read32(addr);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
-        let target = add_cycles!(cycles, interconnect.read32(addr));
+        let target = interconnect.read32(addr);
         arm.branch_to(interconnect, target);
     }
     addr = new_base;\
@@ -158,13 +158,13 @@ LDM = {
     for i in 0..15 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            arm.regs[i] = add_cycles!(cycles, interconnect.read32(addr));
+            arm.regs[i] = interconnect.read32(addr);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
-        let target = add_cycles!(cycles, interconnect.read32(addr));
+        let target = interconnect.read32(addr);
         arm.branch_to(interconnect, target);
     }
     addr = new_base;\
@@ -177,14 +177,14 @@ STM = {
     for i in 0..15 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            cycles += interconnect.write32(addr, arm.regs[i]);
+            interconnect.write32(addr, arm.regs[i]);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
         // address of current instruction + 12 is stored
-        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+        interconnect.write32(addr, arm.regs[REG_PC] + 4);
         addr += 4;
     }\
 '''),
@@ -193,14 +193,14 @@ STM = {
         if reglist & (1 << i) != 0 {
             addr += 4;
             check_watchpoint!(arm, addr);
-            cycles += interconnect.write32(addr, arm.regs[i]);
+            interconnect.write32(addr, arm.regs[i]);
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         addr += 4;
         check_watchpoint!(arm, addr);
         // address of current instruction + 12 is stored
-        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+        interconnect.write32(addr, arm.regs[REG_PC] + 4);
     }\
 '''),
 (False, False): ('stmda', '''
@@ -209,14 +209,14 @@ STM = {
     for i in 0..15 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            cycles += interconnect.write32(addr, arm.regs[i]);
+            interconnect.write32(addr, arm.regs[i]);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
         // address of current instruction + 12 is stored
-        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+        interconnect.write32(addr, arm.regs[REG_PC] + 4);
     }
     addr = new_base;\
 '''),
@@ -226,14 +226,14 @@ STM = {
     for i in 0..15 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            cycles += interconnect.write32(addr, arm.regs[i]);
+            interconnect.write32(addr, arm.regs[i]);
             addr += 4;
         }
     }
     if reglist & (1 << REG_PC) != 0 {
         check_watchpoint!(arm, addr);
         // address of current instruction + 12 is stored
-        cycles += interconnect.write32(addr, arm.regs[REG_PC] + 4);
+        interconnect.write32(addr, arm.regs[REG_PC] + 4);
     }
     addr = new_base;\
 ''')
@@ -250,10 +250,10 @@ def get_second_operand(I, set_cc, discriminant):
     else:
         if discriminant & 0x1: #  Shift by register
             shift_amount = 'arm.regs[(op >> 8 & 0xF) as usize]'
-            cycles = 1
+            cycles = '\ninterconnect.add_internal_cycles(1);'
         else: # Shift by 5-bit immediate
             shift_amount = 'op >> 7 & 0x1F'
-            cycles = 0
+            cycles = ''
 
         shift_type = discriminant >> 1 & 3
         shift_func = BARREL_SHIFT_OPS[shift_type]
@@ -262,8 +262,7 @@ def get_second_operand(I, set_cc, discriminant):
 
         return f'''{{
         let rm = arm.regs[(op & 0xF) as usize];
-        let shift_amount = {shift_amount};
-        cycles += {cycles};
+        let shift_amount = {shift_amount};{cycles}
         barrel_shift_{shift_func}(arm, rm, shift_amount)
     }}\
 '''
@@ -305,7 +304,7 @@ def decode(i):
         ins_name = 'mla' if acc else 'mul'
         if set_cc: ins_name += 's'
 
-        result = '{ cycles += 1; rm.wrapping_mul(rs).wrapping_add(rn) }' if acc else 'rm.wrapping_mul(rs)'
+        result = '{ interconnect.add_internal_cycles(1); rm.wrapping_mul(rs).wrapping_add(rn) }' if acc else 'rm.wrapping_mul(rs)'
         flag_update = '\n\n    set_zn(arm, result);' if set_cc else ''
 
         fn_body = f'''\
@@ -324,7 +323,7 @@ def decode(i):
     let rs = arm.regs[rs_index];
     let rm = arm.regs[rm_index];
 
-    cycles += (rs.leading_zeros() / 8) as i32;
+    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as i32);
 
     let result = {result};
     arm.regs[rd_index] = result;{flag_update}'''
@@ -355,7 +354,7 @@ def decode(i):
         let low = arm.regs[rd_lo_index] as u64;
         let high = arm.regs[rd_hi_index] as u64;
         let c = low | (high << 32);
-        cycles += 1;
+        interconnect.add_internal_cycles(1);
         a.wrapping_mul(b).wrapping_add(c)
     }'''
             else:
@@ -374,7 +373,7 @@ def decode(i):
         let low = arm.regs[rd_lo_index] as i32 as i64;
         let high = arm.regs[rd_hi_index] as i32 as i64;
         let c = low | (high << 32);
-        cycles += 1;
+        interconnect.add_internal_cycles(1);
         a.wrapping_mul(b).wrapping_add(c) as u64
     }'''
             else:
@@ -400,7 +399,7 @@ def decode(i):
     debug_assert!(rd_lo_index != rm_index);
 
     let rs = arm.regs[rs_index];
-    cycles += ({cycle_count}) as i32;
+    interconnect.add_internal_cycles(({cycle_count}) as i32);
 
     let result: u64 = {result};
     arm.regs[rd_lo_index] = result as u32;
@@ -438,16 +437,16 @@ def decode(i):
         addr = 'rn.wrapping_add(offset)' if preindex else 'rn'
 
         operation = {
-            (False, False): 'cycles += interconnect.write32(addr, arm.regs[rd_index]);',
-            (False, True ): 'cycles += interconnect.write8(addr, arm.regs[rd_index] as u8);',
-            (True , False): 'add_cycles!(cycles, interconnect.read32(addr))',
-            (True , True ): 'add_cycles!(cycles, interconnect.read8(addr)) as u32',
+            (False, False): 'interconnect.write32(addr, arm.regs[rd_index]);',
+            (False, True ): 'interconnect.write8(addr, arm.regs[rd_index] as u8);',
+            (True , False): 'interconnect.read32(addr)',
+            (True , True ): 'interconnect.read8(addr) as u32',
         }[(load, byte)]
 
         if load:
             operation = f'''\
 let value = {operation};
-    cycles += 1; // internal cycle for address calculation
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
     if rd_index != REG_PC {{
         arm.regs[rd_index] = value;
     }} else {{
@@ -483,9 +482,9 @@ let value = {operation};
         half = i & 0x002 != 0
 
         (ins_name, operation) = {
-            (True, True): ('ldrsh', 'add_cycles!(cycles, interconnect.read16(addr)) as i16 as u32'),
-            (False, True): ('ldrh', 'add_cycles!(cycles, interconnect.read16(addr)) as u32'),
-            (True, False): ('ldrsb', 'add_cycles!(cycles, interconnect.read8(addr)) as i8 as u32'),
+            (True, True): ('ldrsh', 'interconnect.read16(addr) as i16 as u32'),
+            (False, True): ('ldrh', 'interconnect.read16(addr) as u32'),
+            (True, False): ('ldrsb', 'interconnect.read8(addr) as i8 as u32'),
         }[(signed, half)]
 
         ins_name += '_pre' if preindex else '_post'
@@ -514,7 +513,7 @@ let value = {operation};
     check_watchpoint!(arm, addr);
 
     let value = {operation};
-    cycles += 1; // internal cycle for address calculation
+    interconnect.add_internal_cycles(1); // internal cycle for address calculation
     if rd_index != REG_PC {{
         arm.regs[rd_index] = value;
     }} else {{
@@ -555,7 +554,7 @@ let value = {operation};
     let addr = {addr};
     check_watchpoint!(arm, addr);
 
-    cycles += interconnect.write16(addr, rn as u16);{post_op}'''
+    interconnect.write16(addr, rn as u16);{post_op}'''
 
     # Branch
     if match(i, '101xXXXXxxxx'):
@@ -679,11 +678,8 @@ let value = {operation};
 FN_TEMPLATE = '''\
 #[no_mangle]
 fn op_{ins_name}(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {{
-    let mut cycles = Cycle(0);
-
 {fn_body}
 
-    arm.cycles += cycles;
     StepEvent::None
 }}
 '''
