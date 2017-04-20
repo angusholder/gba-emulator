@@ -323,7 +323,7 @@ def decode(i):
     let rs = arm.regs[rs_index];
     let rm = arm.regs[rm_index];
 
-    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as i32);
+    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as _);
 
     let result = {result};
     arm.regs[rd_index] = result;{flag_update}'''
@@ -399,7 +399,7 @@ def decode(i):
     debug_assert!(rd_lo_index != rm_index);
 
     let rs = arm.regs[rs_index];
-    interconnect.add_internal_cycles(({cycle_count}) as i32);
+    interconnect.add_internal_cycles(({cycle_count}) as _);
 
     let result: u64 = {result};
     arm.regs[rd_lo_index] = result as u32;

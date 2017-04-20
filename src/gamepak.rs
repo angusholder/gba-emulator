@@ -13,7 +13,7 @@ pub struct WaitState {
 }
 
 impl WaitState {
-    fn new(non_seq: i32, seq: i32) -> WaitState {
+    fn new(non_seq: i64, seq: i64) -> WaitState {
         WaitState {
             non_seq: Cycle(non_seq),
             seq: Cycle(seq),

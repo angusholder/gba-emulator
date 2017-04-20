@@ -1,5 +1,6 @@
 use std::cmp::Ord;
 use std::ops::{ Add, AddAssign, Sub, SubAssign };
+use std::fmt;
 
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
@@ -431,7 +432,19 @@ impl<T: Ord + Copy> OrderedSet<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Cycle(pub i32);
+pub struct Cycle(pub i64);
+
+impl Cycle {
+    pub fn max() -> Cycle {
+        Cycle(i64::max_value())
+    }
+}
+
+impl fmt::Display for Cycle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}cy", self.0)
+    }
+}
 
 impl Add for Cycle {
     type Output = Cycle;
@@ -440,9 +453,9 @@ impl Add for Cycle {
     }
 }
 
-impl Add<i32> for Cycle {
+impl Add<i64> for Cycle {
     type Output = Cycle;
-    fn add(self, right: i32) -> Cycle {
+    fn add(self, right: i64) -> Cycle {
         Cycle(self.0 + right)
     }
 }
@@ -453,8 +466,8 @@ impl AddAssign for Cycle {
     }
 }
 
-impl AddAssign<i32> for Cycle {
-    fn add_assign(&mut self, right: i32) {
+impl AddAssign<i64> for Cycle {
+    fn add_assign(&mut self, right: i64) {
         self.0 += right;
     }
 }
@@ -466,9 +479,9 @@ impl Sub for Cycle {
     }
 }
 
-impl Sub<i32> for Cycle {
+impl Sub<i64> for Cycle {
     type Output = Cycle;
-    fn sub(self, right: i32) -> Cycle {
+    fn sub(self, right: i64) -> Cycle {
         Cycle(self.0 - right)
     }
 }
@@ -479,8 +492,8 @@ impl SubAssign for Cycle {
     }
 }
 
-impl SubAssign<i32> for Cycle {
-    fn sub_assign(&mut self, right: i32) {
+impl SubAssign<i64> for Cycle {
+    fn sub_assign(&mut self, right: i64) {
         self.0 -= right;
     }
 }

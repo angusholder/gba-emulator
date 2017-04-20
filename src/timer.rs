@@ -2,6 +2,7 @@ use std::fmt;
 use num::FromPrimitive;
 use utils::Cycle;
 use interconnect::{ IrqFlags, TIMER0_OVERFLOW, TIMER1_OVERFLOW, TIMER2_OVERFLOW, TIMER3_OVERFLOW };
+use log::*;
 
 enum_from_primitive! {
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,10 +35,29 @@ pub enum TimerUnit {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TimerState {
-    Disabled,
+    Disabled {
+        current_value: u16,
+    },
     Enabled {
-        value: u16,
-        remaining: Cycle,
+        initial_cycle: Cycle,
+        initial_value: u16,
+        end_cycle: Cycle,
+    },
+    Cascade {
+        current_value: u16,
+    }
+}
+
+impl TimerState {
+    fn is_disabled(&self) -> bool {
+        match *self {
+            TimerState::Disabled { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        !self.is_disabled()
     }
 }
 
@@ -62,7 +82,7 @@ impl Timer {
             scale: TimerScale::Div1,
             cascade_timing: false,
             irq_on_overflow: false,
-            state: TimerState::Disabled,
+            state: TimerState::Disabled { current_value: 0 },
         }
     }
 
@@ -84,22 +104,50 @@ impl Timer {
         }
     }
 
-    pub fn write_cnt(&mut self, value: u16) {
+    pub fn log_kind(&self) -> LogKind {
+        match self.unit {
+            TimerUnit::Tm0 => TM0,
+            TimerUnit::Tm1 => TM1,
+            TimerUnit::Tm2 => TM2,
+            TimerUnit::Tm3 => TM3,
+        }
+    }
+
+    pub fn restart(&mut self, cycles: Cycle) {
+        self.state = if self.cascade_timing {
+            TimerState::Cascade { current_value: self.reload_value }
+        } else {
+            TimerState::Enabled {
+                initial_value: self.reload_value,
+                initial_cycle: cycles,
+                end_cycle: cycles + Cycle((self.reload_value + 1) as i64 * self.cycles_per_tick().0),
+            }
+        };
+    }
+
+    pub fn pause(&mut self, cycles: Cycle) {
+        self.state = TimerState::Disabled {
+            current_value: self.get_current_value(cycles )
+        };
+    }
+
+    pub fn write_cnt(&mut self, cycles: Cycle, value: u16) {
         let reg = TimerControlReg::from(value);
 
         if reg.count_up_timing {
             assert!(self.unit != TimerUnit::Tm0);
+            unimplemented!();
         }
 
         self.scale = TimerScale::from_u8(reg.scale).unwrap();
         self.cascade_timing = reg.count_up_timing;
         self.irq_on_overflow = reg.irq_enable;
 
-        if reg.start && self.state == TimerState::Disabled {
-            self.state = TimerState::Enabled {
-                value: self.reload_value,
-                remaining: self.cycles_per_tick(),
-            };
+        if reg.start && self.state.is_disabled() {
+            self.restart(cycles);
+        }
+        if !reg.start {
+            self.pause(cycles);
         }
     }
 
@@ -108,7 +156,7 @@ impl Timer {
             scale: self.scale as u8,
             count_up_timing: self.cascade_timing,
             irq_enable: self.irq_on_overflow,
-            start: self.state != TimerState::Disabled,
+            start: self.state.is_enabled(),
         }.into()
     }
 
@@ -116,11 +164,17 @@ impl Timer {
         self.reload_value = value;
     }
 
-    pub fn get_current_value(&self) -> u16 {
-        if let TimerState::Enabled { value, .. } = self.state {
-            value
-        } else {
-            self.reload_value
+    pub fn get_current_value(&self, cycle: Cycle) -> u16 {
+        match self.state {
+            TimerState::Enabled { initial_cycle, initial_value, .. } => {
+                assert!(initial_cycle <= cycle);
+                let cycle_delta = cycle - initial_cycle;
+                assert!(cycle_delta.0 / self.cycles_per_tick().0 < u16::max_value() as i64);
+                let count_delta = (cycle_delta.0 / self.cycles_per_tick().0) as u16;
+                initial_value.saturating_sub(count_delta)
+            }
+            TimerState::Cascade { current_value } => current_value,
+            TimerState::Disabled { current_value } => current_value,
         }
     }
 }

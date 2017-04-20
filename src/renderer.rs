@@ -31,6 +31,16 @@ const OAM_TIMING_U8: Cycle = Cycle(1);
 const OAM_TIMING_U16: Cycle = Cycle(1);
 const OAM_TIMING_U32: Cycle = Cycle(1);
 
+const MAX_VIRT_HEIGHT: u8 = 226;
+const MAX_PHYS_HEIGHT: u8 = 160;
+const MAX_VIRT_WIDTH: u16 = 307;
+const MAX_PHYS_WIDTH: u16 = 240;
+
+const VBLANK_START: u8 = 160;
+const VBLANK_END: u8 = MAX_VIRT_HEIGHT;
+const HBLANK_START: u16 = 240;
+const HBLANK_END: u16 = MAX_VIRT_WIDTH;
+
 #[derive(Default, Clone, Copy)]
 pub struct Background {
     // BGCNT
@@ -98,32 +108,57 @@ impl Renderer {
     }
 
     pub fn step_cycles(&mut self, mut cycles: Cycle) -> IrqFlags {
+        let mut flags = IrqFlags::empty();
         cycles += self.remaining_cycles;
-        while cycles > Cycle(3) {
+        while cycles > Cycle(3) && flags.is_empty() {
             cycles -= 4;
-            self.x += 1;
-            if self.x == 308 {
+            if self.x == MAX_VIRT_WIDTH {
                 self.x = 0;
-                self.scanline += 1;
 
-                if self.scanline == 228 {
+                if self.scanline == MAX_VIRT_HEIGHT {
                     self.scanline = 0;
+                } else {
+                    self.scanline += 1;
                 }
 
-                if self.scanline == 160 && self.vblank_irq_enable {
-                    return LCD_VBLANK;
-                } else if self.x == 240 && self.hblank_irq_enable {
-                    return LCD_HBLANK;
-                } else if self.scanline == self.vcount_setting && self.vcount_irq_enable {
-                    return LCD_VCOUNTER_MATCH;
+                if self.scanline == VBLANK_END {
+                    note!(GPU, "VBlank ended");
+                }
+
+                if self.scanline == VBLANK_START {
+                    if self.vblank_irq_enable {
+                        flags |= LCD_VBLANK;
+                        note!(GPU, "VBlank started with IRQ signal");
+                    } else {
+                        note!(GPU, "VBlank started");
+                    }
+                }
+            } else {
+                self.x += 1;
+            }
+
+            if self.x == HBLANK_START {
+                if self.hblank_irq_enable {
+                    flags |= LCD_HBLANK;
+                    note!(GPU, "HBlank started with IRQ signal");
+                } else {
+                    trace!(GPU, "HBlank started");
                 }
             }
 
+            if self.x == HBLANK_END {
+                trace!(GPU, "HBlank ended");
+            }
+
+            if self.scanline == self.vcount_setting && self.vcount_irq_enable {
+                note!(GPU, "VCounter match IRQ signal");
+                flags |= LCD_VCOUNTER_MATCH;
+            }
         }
 
         self.remaining_cycles = cycles;
 
-        IrqFlags::empty()
+        flags
     }
 
     pub fn write_bgcnt(&mut self, index: usize, value: u16) {

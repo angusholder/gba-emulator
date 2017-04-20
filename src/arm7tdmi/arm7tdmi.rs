@@ -413,8 +413,7 @@ impl Arm7TDMI {
             step_arm(self, interconnect, op)
         };
 
-        let cycles = interconnect.cycles - last_cycles;
-        let trigger_irq = interconnect.step_cycles(cycles);
+        let trigger_irq = interconnect.step_from_cycle_to_current(last_cycles);
         if trigger_irq && !self.cpsr.irq_disable {
             self.signal_irq(interconnect);
         }

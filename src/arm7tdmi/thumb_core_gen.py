@@ -118,7 +118,7 @@ ALU_OPS = {
     '''
     let result = rd.wrapping_mul(rs);
     set_zn(arm, result);
-    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as i32);
+    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as _);
     // MUL sets c and v to meaningless values, so we don't need to touch them.
     arm.regs[rd_index] = result;
 '''),

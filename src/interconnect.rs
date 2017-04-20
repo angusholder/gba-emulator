@@ -1,6 +1,6 @@
 use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
-use timer::{ Timer, TimerUnit, TimerState };
+use timer::{ Timer, TimerUnit };
 use gamepak::GamePak;
 use log::*;
 
@@ -111,73 +111,89 @@ impl Interconnect {
         }
     }
 
-    pub fn step_cycles(&mut self, mut cycles: Cycle) -> bool {
-        while cycles > Cycle(0) {
-            let flag = self.renderer.step_cycles(Cycle(1));
-            if !flag.is_empty() {
-                assert!(flag.bits().count_ones() == 1);
-                if self.master_interrupt_enable && self.interrupt_enable.contains(flag) {
-                    self.interrupt_flags.insert(flag);
-                    return true;
-                }
-            }
+    pub fn step_from_cycle_to_current(&mut self, from_cycle: Cycle) -> bool {
+        let mut flags = IrqFlags::empty();
+        let mut cycles = from_cycle;
 
-            let flag = self.step_timers();
-            if !flag.is_empty() {
-                assert!(flag.bits().count_ones() == 1);
-                if self.master_interrupt_enable && self.interrupt_enable.contains(flag) {
-                    self.interrupt_flags.insert(flag);
-                    return true;
-                }
-            }
+        // TODO: We ought to break this loop as soon as any flags are set, but this isn't possible
+        //       as breaking early would put the rest of the system behind the CPU.
+        while cycles < self.cycles {
+            flags |= self.renderer.step_cycles(Cycle(1));
+            flags |= self.step_timers(cycles);
 
-            cycles -= 1;
+            cycles += 1;
         }
 
-        false
+        if self.master_interrupt_enable && self.interrupt_enable.contains(flags) {
+            self.interrupt_flags.insert(flags);
+            true
+        } else {
+            false
+        }
+
     }
 
-    fn step_timers(&mut self) -> IrqFlags {
-        let mut signal = IrqFlags::empty();
+    fn step_timers(&mut self, cycles: Cycle) -> IrqFlags {
+        use timer::TimerState;
+
+        let mut flags = IrqFlags::empty();
         let mut prev_timer_wrapped = false;
 
         for timer in self.timers.iter_mut() {
-            if let TimerState::Enabled { mut remaining, mut value } = timer.state {
-                if timer.cascade_timing {
-                    if prev_timer_wrapped {
-                        value = value.wrapping_add(1);
-                    }
-                } else {
-                    remaining -= 1;
-                    if remaining == Cycle(0) {
-                        remaining = timer.cycles_per_tick();
-                        value = value.wrapping_add(1);
+            let mut this_timer_wrapped_at: Option<Cycle> = None;
+            match timer.state {
+                TimerState::Enabled { end_cycle, .. } => {
+                    // Enabled doesn't explicitly track the current value, so all we need to do is
+                    // check if we've wrapped.
+                    if cycles >= end_cycle {
+                        trace!(timer.log_kind(), "Wrapped at {}", self.cycles);
+                        this_timer_wrapped_at = Some(end_cycle);
                     }
                 }
-
-                if value == 0 {
-                    prev_timer_wrapped = true;
-                    // Here we're prioritising irq of lower numbered timers. If a timer
-                    // before us has triggered a signal, we get ignored.
-                    if timer.irq_on_overflow && signal.is_empty() {
-                        signal.insert(timer.irq_flag());
+                TimerState::Cascade { current_value } if prev_timer_wrapped => {
+                    // Decrement current value, and if we've wrapped handle it below.
+                    if let Some(value) = current_value.checked_sub(1) {
+                        trace!(timer.log_kind(), "Cascaded at {} to {}", self.cycles, value);
+                        timer.state = TimerState::Cascade { current_value: value };
+                    } else {
+                        trace!(timer.log_kind(), "Cascade wrapped at {}", self.cycles);
+                        this_timer_wrapped_at = Some(cycles);
                     }
-                    value = timer.reload_value;
-                } else {
-                    prev_timer_wrapped = false;
                 }
-
-                timer.state = TimerState::Enabled {
-                    remaining: remaining,
-                    value: value
-                };
+                _ => {}
             }
-        }
 
-        signal
+            // We may not notice timer overflow on the exact cycle it occurs, but we do
+            // count the cycles accurately. This means IRQ signals can be late, but the
+            // timers still always keep an accurate count.
+            if let Some(cycle) = this_timer_wrapped_at {
+                if timer.irq_on_overflow {
+                    note!(timer.log_kind(), "IRQ signal");
+                    flags |= timer.irq_flag();
+                }
+                timer.restart(cycle);
+            }
+
+            // Used only for cascade timing, which doesn't need to know the cycle it occurred on.
+            prev_timer_wrapped = this_timer_wrapped_at.is_some();
+        }
+        
+        flags
     }
 
-    pub fn add_internal_cycles(&mut self, cycles: i32) {
+    /*
+    fn calculate_next_event(&mut self) {
+        use std::cmp;
+
+        let mut next_event_cycle = Cycle::max();
+        for timer in self.timers {
+            if let TimerState::Enabled { end_cycle, .. } = timer.state {
+                next_event_cycle = cmp::min(next_event_cycle, end_cycle);
+            }
+        }
+    }*/
+
+    pub fn add_internal_cycles(&mut self, cycles: i64) {
         // TODO: Do GamePak prefetch buffer
         self.cycles += cycles;
     }
@@ -678,7 +694,7 @@ impl_io_map! {
 
     (u16, REG_TM0CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[0].get_current_value()
+            ic.timers[0].get_current_value(ic.cycles)
         },
         write => |ic: &mut Interconnect, value| {
             ic.timers[0].set_reload_value(value);
@@ -686,7 +702,7 @@ impl_io_map! {
     }
     (u16, REG_TM1CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[1].get_current_value()
+            ic.timers[1].get_current_value(ic.cycles)
         },
         write => |ic: &mut Interconnect, value| {
             ic.timers[1].set_reload_value(value);
@@ -694,7 +710,7 @@ impl_io_map! {
     }
     (u16, REG_TM2CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[2].get_current_value()
+            ic.timers[2].get_current_value(ic.cycles)
         },
         write => |ic: &mut Interconnect, value| {
             ic.timers[2].set_reload_value(value);
@@ -702,7 +718,7 @@ impl_io_map! {
     }
     (u16, REG_TM3CNT_L) {
         read => |ic: &Interconnect| {
-            ic.timers[3].get_current_value()
+            ic.timers[3].get_current_value(ic.cycles)
         },
         write => |ic: &mut Interconnect, value| {
             ic.timers[3].set_reload_value(value);
@@ -714,7 +730,7 @@ impl_io_map! {
             ic.timers[0].read_cnt()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[0].write_cnt(value);
+            ic.timers[0].write_cnt(ic.cycles, value);
         }
     }
     (u16, REG_TM1CNT_H) {
@@ -722,7 +738,7 @@ impl_io_map! {
             ic.timers[1].read_cnt()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[1].write_cnt(value);
+            ic.timers[1].write_cnt(ic.cycles, value);
         }
     }
     (u16, REG_TM2CNT_H) {
@@ -730,7 +746,7 @@ impl_io_map! {
             ic.timers[2].read_cnt()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[2].write_cnt(value);
+            ic.timers[2].write_cnt(ic.cycles, value);
         }
     }
     (u16, REG_TM3CNT_H) {
@@ -738,7 +754,7 @@ impl_io_map! {
             ic.timers[3].read_cnt()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[3].write_cnt(value);
+            ic.timers[3].write_cnt(ic.cycles, value);
         }
     }
 
@@ -766,7 +782,6 @@ impl_io_map! {
     (u16, REG_SOUNDCNT_L  ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SOUNDCNT_H  ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SOUNDCNT_X  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUNDBIAS   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_WAVE_RAM_0  ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_WAVE_RAM_1  ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_WAVE_RAM_2  ) { read => read_stub!(), write => write_stub!() }
