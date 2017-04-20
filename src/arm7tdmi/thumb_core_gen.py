@@ -298,7 +298,12 @@ FUNCTIONS = {
 'add_hreg': '''
     let rs = arm.regs[(op >> 3 & 0xF) as usize];
     let rd_index = ((op & 0b111) | ((op & 0x80) >> 4)) as usize;
-    arm.regs[rd_index] = arm.regs[rd_index].wrapping_add(rs);
+    let result arm.regs[rd_index].wrapping_add(rs);
+    if rd_index != REG_PC {
+        arm.regs[rd_index] = result;
+    } else {
+        arm.branch_to(interconnect, result);
+    }
 ''',
 'cmp_hreg': '''
     let rs = arm.regs[(op >> 3 & 0xF) as usize];
@@ -310,7 +315,11 @@ FUNCTIONS = {
 'mov_hreg': '''
     let rs = arm.regs[(op >> 3 & 0xF) as usize];
     let rd_index = ((op & 0b111) | ((op & 0x80) >> 4)) as usize;
-    arm.regs[rd_index] = rs;
+    if rd_index != REG_PC {
+        arm.regs[rd_index] = rs;
+    } else {
+        arm.branch_to(interconnect, rs);
+    }
 ''',
 'bx': '''
     let rs = arm.regs[(op >> 3 & 0xF) as usize];
