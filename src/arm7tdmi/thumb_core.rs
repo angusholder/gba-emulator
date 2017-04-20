@@ -7,8 +7,6 @@ use interconnect::Interconnect;
 use super::core_common::*;
 
 pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
-    debug_assert!(arm.regs[REG_PC] & 1 == 0);
-
     let discr = (op >> 6) as usize;
     THUMB_LUT[discr](arm, interconnect, op)
 }

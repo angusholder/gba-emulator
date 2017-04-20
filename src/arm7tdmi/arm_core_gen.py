@@ -313,11 +313,11 @@ def decode(i):
     let rs_index = (op >> 8 & 0xF) as usize;
     let rm_index = (op & 0xF) as usize;
 
-    debug_assert!(rd_index != rm_index);
-    debug_assert!(rd_index != REG_PC);
-    debug_assert!(rs_index != REG_PC);
-    debug_assert!(rn_index != REG_PC);
-    debug_assert!(rm_index != REG_PC);
+    assert!(rd_index != rm_index);
+    assert!(rd_index != REG_PC);
+    assert!(rs_index != REG_PC);
+    assert!(rn_index != REG_PC);
+    assert!(rm_index != REG_PC);
 
     let rn = arm.regs[rn_index];
     let rs = arm.regs[rs_index];
@@ -390,13 +390,13 @@ def decode(i):
     let rs_index = (op >> 8 & 0xF) as usize;
     let rm_index = (op & 0xF) as usize;
 
-    debug_assert!(rd_hi_index != REG_PC);
-    debug_assert!(rd_lo_index != REG_PC);
-    debug_assert!(rs_index != REG_PC);
-    debug_assert!(rm_index != REG_PC);
-    debug_assert!(rd_hi_index != rd_lo_index);
-    debug_assert!(rd_hi_index != rm_index);
-    debug_assert!(rd_lo_index != rm_index);
+    assert!(rd_hi_index != REG_PC);
+    assert!(rd_lo_index != REG_PC);
+    assert!(rs_index != REG_PC);
+    assert!(rm_index != REG_PC);
+    assert!(rd_hi_index != rd_lo_index);
+    assert!(rd_hi_index != rm_index);
+    assert!(rd_lo_index != rm_index);
 
     let rs = arm.regs[rs_index];
     interconnect.add_internal_cycles(({cycle_count}) as _);

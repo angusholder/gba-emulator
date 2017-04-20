@@ -9,8 +9,6 @@ use num::FromPrimitive;
 use log::*;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    debug_assert!(arm.regs[REG_PC] & 3 == 0);
-
     let cond = ConditionCode::from_u32(op >> 28).unwrap();
     if !arm.eval_condition_code(cond) {
         return StepEvent::None;
