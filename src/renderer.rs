@@ -204,6 +204,12 @@ impl Renderer {
     pub fn write_dispcnt(&mut self, value: u16) {
         self.control = DisplayControlReg::from(value);
         note!(GPU, "Setting DISPCNT = {:?}", self.control);
+
+        assert!(self.control.bg_mode <= 5);
+        assert!(!self.control.cgb_mode);
+        assert!(!self.control.display_window_0);
+        assert!(!self.control.display_window_1);
+        assert!(!self.control.display_obj_window);
     }
 
     pub fn read_dispstat(&self) -> u16 {
