@@ -146,7 +146,7 @@ macro_rules! error {
     }}
 }
 
-static mut MINIMUM_LOG_LEVELS: [LogLevel; 12] = [LogLevel::Warn; 12];
+static mut MINIMUM_LOG_LEVELS: [LogLevel; 13] = [LogLevel::Warn; 13];
 
 pub fn get_log_level(kind: LogKind) -> LogLevel {
     unsafe {
