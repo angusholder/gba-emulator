@@ -151,6 +151,7 @@ impl StatusRegister {
     }
 }
 
+#[derive(PartialEq)]
 pub enum StepEvent {
     None,
     TriggerBreakpoint(u32),
@@ -386,38 +387,26 @@ impl Arm7TDMI {
         use super::thumb_core::step_thumb;
         use super::arm_core::step_arm;
 
-        let op = interconnect.prefetch[0];
-        let addr = self.current_pc();
-
-        let last_cycles = interconnect.cycles;
-
-        if self.breakpoints.contains(addr) {
-            return StepEvent::TriggerBreakpoint(addr);
+        if self.breakpoints.contains(self.current_pc()) {
+            return StepEvent::TriggerBreakpoint(self.current_pc());
         }
 
-        let step = self.get_op_size();
-        self.regs[REG_PC] += step;
+        self.regs[REG_PC] += self.get_op_size();
 
-        interconnect.prefetch[0] = interconnect.prefetch[1];
         let next_op = if self.cpsr.thumb_mode {
             interconnect.exec_thumb_slow(self.regs[REG_PC]) as u32
         } else {
             interconnect.exec_arm_slow(self.regs[REG_PC])
         };
 
+        let op = interconnect.prefetch[0];
+        interconnect.prefetch[0] = interconnect.prefetch[1];
         interconnect.prefetch[1] = next_op;
 
-        let event = if self.cpsr.thumb_mode {
+        if self.cpsr.thumb_mode {
             step_thumb(self, interconnect, op as u16)
         } else {
             step_arm(self, interconnect, op)
-        };
-
-        let trigger_irq = interconnect.step_from_cycle_to_current(last_cycles);
-        if trigger_irq && !self.cpsr.irq_disable {
-            self.signal_irq(interconnect);
         }
-
-        event
     }
 }

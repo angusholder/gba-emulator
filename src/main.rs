@@ -17,6 +17,7 @@ mod debugger;
 mod renderer;
 mod timer;
 mod gamepak;
+mod dma;
 
 use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;

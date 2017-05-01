@@ -1,8 +1,11 @@
 use utils::{ Buffer, Cycle, sign_extend };
 use renderer::Renderer;
-use timer::{ Timer, TimerUnit };
+use dma::{ Dma, DmaUnit, step_dma_units, dma_on_vblank, dma_on_hblank };
+use timer::{ Timer, TimerUnit, step_timers };
 use gamepak::GamePak;
 use log::*;
+use log;
+use arm7tdmi::{ Arm7TDMI, StepEvent };
 
 const ROM_START: u32 = 0x0000_0000;
 const ROM_SIZE: u32 = 0x4000;
@@ -48,7 +51,8 @@ pub struct Interconnect {
     pc_inside_bios: bool,
     pub cycles: Cycle,
 
-    timers: [Timer; 4],
+    pub timers: [Timer; 4],
+    pub dma: [Dma; 4],
     renderer: Renderer,
 
     rom: Buffer,
@@ -89,6 +93,12 @@ impl Interconnect {
                 Timer::new(TimerUnit::Tm2),
                 Timer::new(TimerUnit::Tm3)
             ],
+            dma: [
+                Dma::new(DmaUnit::Dma0),
+                Dma::new(DmaUnit::Dma1),
+                Dma::new(DmaUnit::Dma2),
+                Dma::new(DmaUnit::Dma3)
+            ],
             renderer: Renderer::new(),
 
             rom: Buffer::new(bios),
@@ -111,87 +121,41 @@ impl Interconnect {
         }
     }
 
-    pub fn step_from_cycle_to_current(&mut self, from_cycle: Cycle) -> bool {
+    pub fn step(&mut self, arm: &mut Arm7TDMI) -> StepEvent {
         let mut flags = IrqFlags::empty();
-        let mut cycles = from_cycle;
 
-        // TODO: We ought to break this loop as soon as any flags are set, but this isn't possible
-        //       as breaking early would put the rest of the system behind the CPU.
-        while cycles < self.cycles {
-            flags |= self.renderer.step_cycles(Cycle(1));
-            flags |= self.step_timers(cycles);
+        let start_cycle = self.cycles;
 
-            cycles += 1;
-        }
-
-        if self.master_interrupt_enable && self.interrupt_enable.contains(flags) {
-            self.interrupt_flags.insert(flags);
-            true
+        // If a DMA engine did any work, the CPU does no work for this iteration
+        if let Some(flag) = step_dma_units(self) {
+            flags |= flag;
         } else {
-            false
+            let event = arm.step(self);
+            if event != StepEvent::None {
+                return event;
+            }
         }
 
+        let current_cycle = self.cycles;
+        flags |= self.renderer.step_cycles(current_cycle - start_cycle);
+        flags |= step_timers(self, current_cycle);
+
+        if flags.contains(LCD_VBLANK) {
+            dma_on_vblank(self);
+        }
+
+        if flags.contains(LCD_HBLANK) {
+            dma_on_hblank(self);
+        }
+
+        let masked = flags & self.interrupt_enable;
+        if self.master_interrupt_enable && !masked.is_empty() {
+            self.interrupt_flags.insert(masked);
+            arm.signal_irq(self);
+        }
+
+        StepEvent::None
     }
-
-    fn step_timers(&mut self, cycles: Cycle) -> IrqFlags {
-        use timer::TimerState;
-
-        let mut flags = IrqFlags::empty();
-        let mut prev_timer_wrapped = false;
-
-        for timer in self.timers.iter_mut() {
-            let mut this_timer_wrapped_at: Option<Cycle> = None;
-            match timer.state {
-                TimerState::Enabled { end_cycle, .. } => {
-                    // Enabled doesn't explicitly track the current value, so all we need to do is
-                    // check if we've wrapped.
-                    if cycles >= end_cycle {
-                        trace!(timer.log_kind(), "Wrapped at {}", self.cycles);
-                        this_timer_wrapped_at = Some(end_cycle);
-                    }
-                }
-                TimerState::Cascade { current_value } if prev_timer_wrapped => {
-                    // Decrement current value, and if we've wrapped handle it below.
-                    if let Some(value) = current_value.checked_sub(1) {
-                        trace!(timer.log_kind(), "Cascaded at {} to {}", self.cycles, value);
-                        timer.state = TimerState::Cascade { current_value: value };
-                    } else {
-                        trace!(timer.log_kind(), "Cascade wrapped at {}", self.cycles);
-                        this_timer_wrapped_at = Some(cycles);
-                    }
-                }
-                _ => {}
-            }
-
-            // We may not notice timer overflow on the exact cycle it occurs, but we do
-            // count the cycles accurately. This means IRQ signals can be late, but the
-            // timers still always keep an accurate count.
-            if let Some(cycle) = this_timer_wrapped_at {
-                if timer.irq_on_overflow {
-                    note!(timer.log_kind(), "IRQ signal");
-                    flags |= timer.irq_flag();
-                }
-                timer.restart(cycle);
-            }
-
-            // Used only for cascade timing, which doesn't need to know the cycle it occurred on.
-            prev_timer_wrapped = this_timer_wrapped_at.is_some();
-        }
-        
-        flags
-    }
-
-    /*
-    fn calculate_next_event(&mut self) {
-        use std::cmp;
-
-        let mut next_event_cycle = Cycle::max();
-        for timer in self.timers {
-            if let TimerState::Enabled { end_cycle, .. } = timer.state {
-                next_event_cycle = cmp::min(next_event_cycle, end_cycle);
-            }
-        }
-    }*/
 
     pub fn add_internal_cycles(&mut self, cycles: i64) {
         // TODO: Do GamePak prefetch buffer
@@ -236,7 +200,7 @@ impl Interconnect {
     }
 
     pub fn debug_read16(&self, addr: u32) -> (Cycle, u16) {
-        if addr & 1 != 0 { panic!("Unaligned halfword read at 0x{:08X}", addr); }
+        assert!(addr & 1 == 0, "Unaligned halfword read at 0x{:08X}", addr);
 
         match addr >> 24 {
             0x0 | 0x1 => { // rom
@@ -275,7 +239,7 @@ impl Interconnect {
     }
 
     pub fn debug_read32(&self, addr: u32) -> (Cycle, u32) {
-        if addr & 3 != 0 { panic!("Unaligned word read at 0x{:08X}", addr); }
+        assert!(addr & 3 == 0, "Unaligned word read at 0x{:08X}", addr);
 
         match addr >> 24 {
             0x0 | 0x1 => { // rom
@@ -342,7 +306,8 @@ impl Interconnect {
     }
 
     pub fn debug_write16(&mut self, addr: u32, value: u16) -> Cycle {
-        if addr & 1 != 0 { panic!("Unaligned halfword write at 0x{:08X} of 0x{:08X}", addr, value); }
+        assert!(addr & 1 == 0, "Unaligned halfword write at 0x{:08X} of 0x{:08X}", addr, value);
+
         match addr >> 24 {
             0x2 => { // ewram
                 self.ewram.write16((addr - EWRAM_START) & EWRAM_MASK, value);
@@ -371,7 +336,8 @@ impl Interconnect {
     }
 
     pub fn debug_write32(&mut self, addr: u32, value: u32) -> Cycle {
-        if addr & 3 != 0 { panic!("Unaligned word write at 0x{:08X} of 0x{:08X}", addr, value); }
+        assert!(addr & 3 == 0, "Unaligned word write at 0x{:08X} of 0x{:08X}", addr, value);
+
         match addr >> 24 {
             0x2 => { // ewram
                 self.ewram.write32((addr - EWRAM_START) & EWRAM_MASK, value);
@@ -440,7 +406,7 @@ impl Interconnect {
 }
 
 macro_rules! unreadable {
-    ($kind:ident, $reg:expr) => {
+    ($kind:expr, $reg:expr) => {
         |_ic: &Interconnect| {
             let reg_name = stringify!($reg);
             warn!($kind, "Tried to read the write-only {} (at 0x{:X}).", reg_name, $reg);
@@ -450,7 +416,7 @@ macro_rules! unreadable {
 }
 
 macro_rules! unwriteable {
-    ($kind:ident, $reg:expr) => {
+    ($kind:expr, $reg:expr) => {
         |_ic: &mut Interconnect, value| {
             let reg_name = stringify!($reg);
             warn!($kind, "Tried to write {:X} to read-only {} (at 0x{:X})", value, reg_name, $reg);
@@ -527,6 +493,7 @@ impl_io_map! {
 
     (u32, REG_WAITCNT) {
         read => |_ic: &Interconnect| {
+            warn!(IO, "Reading stubbed WAITCNT");
             0
         },
         write => |ic: &mut Interconnect, value: u32| {
@@ -727,34 +694,142 @@ impl_io_map! {
 
     (u16, REG_TM0CNT_H) {
         read => |ic: &Interconnect| {
-            ic.timers[0].read_cnt()
+            ic.timers[0].read_control()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[0].write_cnt(ic.cycles, value);
+            ic.timers[0].write_control(ic.cycles, value);
         }
     }
     (u16, REG_TM1CNT_H) {
         read => |ic: &Interconnect| {
-            ic.timers[1].read_cnt()
+            ic.timers[1].read_control()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[1].write_cnt(ic.cycles, value);
+            ic.timers[1].write_control(ic.cycles, value);
         }
     }
     (u16, REG_TM2CNT_H) {
         read => |ic: &Interconnect| {
-            ic.timers[2].read_cnt()
+            ic.timers[2].read_control()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[2].write_cnt(ic.cycles, value);
+            ic.timers[2].write_control(ic.cycles, value);
         }
     }
     (u16, REG_TM3CNT_H) {
         read => |ic: &Interconnect| {
-            ic.timers[3].read_cnt()
+            ic.timers[3].read_control()
         },
         write => |ic: &mut Interconnect, value| {
-            ic.timers[3].write_cnt(ic.cycles, value);
+            ic.timers[3].write_control(ic.cycles, value);
+        }
+    }
+
+    (u32, REG_DMA0SAD) {
+        read => unreadable!(log::DMA0, REG_DMA0SAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[0].write_source(value);
+        }
+    }
+    (u32, REG_DMA1SAD) {
+        read => unreadable!(log::DMA1, REG_DMA1SAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[1].write_source(value);
+        }
+    }
+    (u32, REG_DMA2SAD) {
+        read => unreadable!(log::DMA2, REG_DMA2SAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[2].write_source(value);
+        }
+    }
+    (u32, REG_DMA3SAD) {
+        read => unreadable!(log::DMA3, REG_DMA3SAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[3].write_source(value);
+        }
+    }
+
+    (u32, REG_DMA0DAD) {
+        read => unreadable!(log::DMA0, REG_DMA0DAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[0].write_dest(value);
+        }
+    }
+    (u32, REG_DMA1DAD) {
+        read => unreadable!(log::DMA1, REG_DMA1DAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[1].write_dest(value);
+        }
+    }
+    (u32, REG_DMA2DAD) {
+        read => unreadable!(log::DMA2, REG_DMA2DAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[2].write_dest(value);
+        }
+    }
+    (u32, REG_DMA3DAD) {
+        read => unreadable!(log::DMA3, REG_DMA3DAD),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[3].write_dest(value);
+        }
+    }
+
+    (u16, REG_DMA0CNT_L) {
+        read => unreadable!(log::DMA0, REG_DMA0CNT_L),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[0].write_word_count(value);
+        }
+    }
+    (u16, REG_DMA1CNT_L) {
+        read => unreadable!(log::DMA1, REG_DMA1CNT_L),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[1].write_word_count(value);
+        }
+    }
+    (u16, REG_DMA2CNT_L) {
+        read => unreadable!(log::DMA2, REG_DMA2CNT_L),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[2].write_word_count(value);
+        }
+    }
+    (u16, REG_DMA3CNT_L) {
+        read => unreadable!(log::DMA3, REG_DMA3CNT_L),
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[3].write_word_count(value);
+        }
+    }
+
+    (u16, REG_DMA0CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.dma[0].read_control()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[0].write_control(value);
+        }
+    }
+    (u16, REG_DMA1CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.dma[1].read_control()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[1].write_control(value);
+        }
+    }
+    (u16, REG_DMA2CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.dma[2].read_control()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[2].write_control(value);
+        }
+    }
+    (u16, REG_DMA3CNT_H) {
+        read => |ic: &Interconnect| {
+            ic.dma[3].read_control()
+        },
+        write => |ic: &mut Interconnect, value| {
+            ic.dma[3].write_control(value);
         }
     }
 
@@ -792,22 +867,6 @@ impl_io_map! {
     (u16, REG_WAVE_RAM_7  ) { read => read_stub!(), write => write_stub!() }
     (u32, REG_FIFO_A      ) { read => read_stub!(), write => write_stub!() }
     (u32, REG_FIFO_B      ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA0SAD     ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA0DAD     ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA0CNT_L   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA0CNT_H   ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA1SAD     ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA1DAD     ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA1CNT_L   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA1CNT_H   ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA2SAD     ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA2DAD     ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA2CNT_L   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA2CNT_H   ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA3SAD     ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_DMA3DAD     ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA3CNT_L   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_DMA3CNT_H   ) { read => read_stub!(), write => write_stub!() }
     (u32, REG_SIODATA32   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SIOMULTI0   ) { read => read_stub!(), write => write_stub!() }
     (u16, REG_SIOMULTI1   ) { read => read_stub!(), write => write_stub!() }

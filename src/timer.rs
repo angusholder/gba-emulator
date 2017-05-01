@@ -1,12 +1,12 @@
 use std::fmt;
 use num::FromPrimitive;
 use utils::Cycle;
-use interconnect::{ IrqFlags, TIMER0_OVERFLOW, TIMER1_OVERFLOW, TIMER2_OVERFLOW, TIMER3_OVERFLOW };
+use interconnect::{ Interconnect, IrqFlags, TIMER0_OVERFLOW, TIMER1_OVERFLOW, TIMER2_OVERFLOW, TIMER3_OVERFLOW };
 use log::*;
 
 enum_from_primitive! {
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum TimerScale {
+enum TimerScale {
     Div1 = 0,
     Div64 = 1,
     Div256 = 2,
@@ -34,10 +34,11 @@ pub enum TimerUnit {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum TimerState {
+enum TimerState {
     Disabled {
         current_value: u16,
     },
+    Idle,
     Enabled {
         initial_cycle: Cycle,
         initial_value: u16,
@@ -61,15 +62,61 @@ impl TimerState {
     }
 }
 
+pub fn step_timers(interconnect: &mut Interconnect, cycles: Cycle) -> IrqFlags {
+    let mut flags = IrqFlags::empty();
+    let mut prev_timer_wrapped = false;
+
+    for timer in interconnect.timers.iter_mut() {
+        let mut this_timer_wrapped_at: Option<Cycle> = None;
+        match timer.state {
+            TimerState::Enabled { end_cycle, .. } => {
+                // Enabled doesn't explicitly track the current value, so all we need to do is
+                // check if we've wrapped.
+                if cycles >= end_cycle {
+                    trace!(timer.log_kind(), "Wrapped at {}", interconnect.cycles);
+                    this_timer_wrapped_at = Some(end_cycle);
+                }
+            }
+            TimerState::Cascade { current_value } if prev_timer_wrapped => {
+                // Decrement current value, and if we've wrapped handle it below.
+                if let Some(value) = current_value.checked_sub(1) {
+                    trace!(timer.log_kind(), "Cascaded at {} to {}", interconnect.cycles, value);
+                    timer.state = TimerState::Cascade { current_value: value };
+                } else {
+                    trace!(timer.log_kind(), "Cascade wrapped at {}", interconnect.cycles);
+                    this_timer_wrapped_at = Some(cycles);
+                }
+            }
+            _ => {}
+        }
+
+        // We may not notice timer overflow on the exact cycle it occurs, but we do
+        // count the cycles accurately. This means IRQ signals can be late, but the
+        // timers still always keep an accurate count.
+        if let Some(cycle) = this_timer_wrapped_at {
+            if timer.irq_on_overflow {
+                note!(timer.log_kind(), "IRQ signal");
+                flags |= timer.irq_flag();
+            }
+            timer.restart(cycle);
+        }
+
+        // Used only for cascade timing, which doesn't need to know the cycle it occurred on.
+        prev_timer_wrapped = this_timer_wrapped_at.is_some();
+    }
+
+    flags
+}
+
 #[derive(Clone, Copy)]
 pub struct Timer {
     unit: TimerUnit,
 
     scale: TimerScale,
-    pub reload_value: u16,
-    pub cascade_timing: bool,
-    pub irq_on_overflow: bool,
-    pub state: TimerState,
+    reload_value: u16,
+    cascade_timing: bool,
+    irq_on_overflow: bool,
+    state: TimerState,
 }
 
 impl Timer {
@@ -86,7 +133,7 @@ impl Timer {
         }
     }
 
-    pub fn cycles_per_tick(&self) -> Cycle {
+    fn cycles_per_tick(&self) -> Cycle {
         match self.scale {
             TimerScale::Div1 => Cycle(1),
             TimerScale::Div64 => Cycle(64),
@@ -95,7 +142,7 @@ impl Timer {
         }
     }
 
-    pub fn irq_flag(&self) -> IrqFlags {
+    fn irq_flag(&self) -> IrqFlags {
         match self.unit {
             TimerUnit::Tm0 => TIMER0_OVERFLOW,
             TimerUnit::Tm1 => TIMER1_OVERFLOW,
@@ -104,7 +151,7 @@ impl Timer {
         }
     }
 
-    pub fn log_kind(&self) -> LogKind {
+    fn log_kind(&self) -> LogKind {
         match self.unit {
             TimerUnit::Tm0 => TM0,
             TimerUnit::Tm1 => TM1,
@@ -113,7 +160,7 @@ impl Timer {
         }
     }
 
-    pub fn restart(&mut self, cycles: Cycle) {
+    fn restart(&mut self, cycles: Cycle) {
         self.state = if self.cascade_timing {
             TimerState::Cascade { current_value: self.reload_value }
         } else {
@@ -125,13 +172,13 @@ impl Timer {
         };
     }
 
-    pub fn pause(&mut self, cycles: Cycle) {
+    fn pause(&mut self, cycles: Cycle) {
         self.state = TimerState::Disabled {
-            current_value: self.get_current_value(cycles )
+            current_value: self.get_current_value(cycles)
         };
     }
 
-    pub fn write_cnt(&mut self, cycles: Cycle, value: u16) {
+    pub fn write_control(&mut self, cycles: Cycle, value: u16) {
         let reg = TimerControlReg::from(value);
 
         if reg.count_up_timing {
@@ -151,7 +198,7 @@ impl Timer {
         }
     }
 
-    pub fn read_cnt(&self) -> u16 {
+    pub fn read_control(&self) -> u16 {
         TimerControlReg {
             scale: self.scale as u8,
             count_up_timing: self.cascade_timing,
@@ -175,6 +222,7 @@ impl Timer {
             }
             TimerState::Cascade { current_value } => current_value,
             TimerState::Disabled { current_value } => current_value,
+            TimerState::Idle => self.reload_value,
         }
     }
 }
