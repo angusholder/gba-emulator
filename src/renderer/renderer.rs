@@ -71,8 +71,8 @@ pub struct Background {
 #[derive(Clone)]
 pub struct Renderer {
     vram: Buffer,
-    bg_palette: Box<[u16]>, // Always 256, boxed because [T; 256] has no Clone impl
-    obj_palette: Box<[u16]>, // Always 256, boxed because [T; 256] has no Clone impl
+    bg_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
+    obj_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
     obj_transforms: [ObjTransform; 32],
     obj_attributes: Box<[ObjAttributes]>, // Always 128, boxed because [T; 128] has no Clone impl
 
@@ -254,9 +254,9 @@ impl Renderer {
         let index = (addr & 0x1FF) >> 1;
         let value = value & 0x7FFF;
         if addr & 0x200 == 0 {
-            self.bg_palette[index as usize] = value;
+            self.bg_palette[index as usize] = rgb15_to_bgr24(value);
         } else {
-            self.obj_palette[index as usize] = value;
+            self.obj_palette[index as usize] = rgb15_to_bgr24(value);
         }
         PALETTE_TIMING_U16
     }
@@ -340,9 +340,9 @@ impl Renderer {
         assert!(addr & ADDR_UPPER_MASK == PALETTE_START);
         let index = (addr & 0x1FF) >> 1;
         let read = if addr & 0x200 == 0 {
-            self.bg_palette[index as usize]
+            bgr24_to_rgb15(self.bg_palette[index as usize])
         } else {
-            self.obj_palette[index as usize]
+            bgr24_to_rgb15(self.obj_palette[index as usize])
         };
         (PALETTE_TIMING_U16, read)
     }
@@ -411,6 +411,20 @@ impl Renderer {
     pub fn vram_as_ptr(&self) -> *const u8 {
         self.vram.as_ptr()
     }
+}
+
+fn rgb15_to_bgr24(c: u16) -> u32 {
+    let r = (c & 0x1F) as u32;
+    let g = (c >> 5 & 0x1F) as u32;
+    let b = (c >> 10 & 0x1F) as u32;
+    b | (g << 8) | (r << 16)
+}
+
+fn bgr24_to_rgb15(c: u32) -> u16 {
+    let b = (c & 0x1F) as u16;
+    let g = (c >> 8 & 0x1F) as u16;
+    let r = (c >> 16 & 0x1F) as u16;
+    r | (g << 5) | (b << 10)
 }
 
 unpacked_bitfield_struct! {
