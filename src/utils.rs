@@ -503,3 +503,33 @@ pub fn sign_extend(n: u32, n_bits: usize) -> u32 {
     let shift = 32 - n_bits;
     (((n << shift) as i32) >> shift) as u32
 }
+
+// TODO: This is only needed because Latched is used inside Dma, which is forced to be Copy by the
+// poor support for fixed length arrays currently. Hopefully soon we'll get const parameters in
+// generics.
+#[derive(Clone, Copy)]
+pub struct Latched<T: Copy> {
+    latched: T,
+    next: T,
+}
+
+impl<T: Copy> Latched<T> {
+    pub fn new(initial: T) -> Latched<T> {
+        Latched {
+            latched: initial,
+            next: initial,
+        }
+    }
+
+    pub fn get(&self) -> T {
+        self.latched
+    }
+
+    pub fn set(&mut self, next: T) {
+        self.next = next;
+    }
+
+    pub fn latch(&mut self) {
+        self.latched = self.next;
+    }
+}

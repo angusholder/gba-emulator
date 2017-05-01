@@ -1,6 +1,7 @@
 use num::FromPrimitive;
 use interconnect::{ Interconnect, IrqFlags, DMA0, DMA1, DMA2, DMA3 };
 use log::*;
+use utils::Latched;
 
 enum_from_primitive! {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -57,13 +58,9 @@ use self::DmaUnit::*;
 pub struct Dma {
     unit: DmaUnit,
 
-    source: u32,
-    dest: u32,
-    word_count: u32,
-
-    latched_source: u32,
-    latched_dest: u32,
-    latched_word_count: u32,
+    source: Latched<u32>,
+    dest: Latched<u32>,
+    word_count: Latched<u32>,
 
     running: Option<RunState>,
 
@@ -154,15 +151,15 @@ fn initialize_dma(dma: &mut Dma) {
 
     let step_size = if dma.transfer_type == DmaTransferType::U16 { 2 } else { 4 };
 
-    // Repeats cause the latched word count to be reloaded
-    dma.latched_word_count = dma.word_count;
+    // Repeats cause the word count to latch
+    dma.word_count.latch();
 
     let dest_step = match dma.dest_control {
         Increment => step_size,
         Decrement => -(step_size as i32) as u32,
         Fixed => 0,
         IncrementReload => {
-            dma.latched_dest = dma.dest;
+            dma.dest.latch();
             step_size
         }
     };
@@ -175,9 +172,9 @@ fn initialize_dma(dma: &mut Dma) {
     };
 
     dma.running = Some(RunState {
-        source: dma.latched_source,
-        dest: dma.latched_dest,
-        words_remaining: dma.latched_word_count,
+        source: dma.source.get(),
+        dest: dma.dest.get(),
+        words_remaining: dma.word_count.get(),
         dest_step: dest_step,
         source_step: source_step,
     });
@@ -188,13 +185,9 @@ impl Dma {
         Dma {
             unit: unit,
 
-            source: 0,
-            dest: 0,
-            word_count: 0,
-
-            latched_source: 0,
-            latched_dest: 0,
-            latched_word_count: 0,
+            source: Latched::new(0),
+            dest: Latched::new(0),
+            word_count: Latched::new(0),
 
             running: None,
 
@@ -231,10 +224,10 @@ impl Dma {
     pub fn write_source(&mut self, addr: u32) {
         match self.unit {
             Dma0 => { // internal memory only
-                self.source = addr & 0x07FF_FFFF;
+                self.source.set(addr & 0x07FF_FFFF);
             }
             Dma1 | Dma2 | Dma3 => { // any memory
-                self.source = addr & 0x0FFF_FFFF;
+                self.source.set(addr & 0x0FFF_FFFF);
             }
         }
     }
@@ -242,10 +235,10 @@ impl Dma {
     pub fn write_dest(&mut self, addr: u32) {
         match self.unit {
             Dma0 | Dma1 | Dma2 => { // internal memory only
-                self.dest = addr & 0x07FF_FFFF;
+                self.dest.set(addr & 0x07FF_FFFF);
             }
             Dma3 => { // any memory
-                self.dest = addr & 0x0FFF_FFFF;
+                self.dest.set(addr & 0x0FFF_FFFF);
             }
         }
     }
@@ -255,16 +248,16 @@ impl Dma {
         match self.unit {
             Dma0 | Dma1 | Dma2 => { // [1,0x4000]
                 if count == 0 {
-                    self.word_count = 0x4000;
+                    self.word_count.set(0x4000);
                 } else {
-                    self.word_count = (count & 0x3FFF) as u32;
+                    self.word_count.set((count & 0x3FFF) as u32);
                 }
             }
             Dma3 => { // [1,0x10_000]
                 if count == 0 {
-                    self.word_count = 0x10_000;
+                    self.word_count.set(0x10_000);
                 } else {
-                    self.word_count = count as u32;
+                    self.word_count.set(count as u32);
                 }
             }
         }
@@ -287,9 +280,9 @@ impl Dma {
         let reg = DmaControlReg::from(word);
 
         if reg.enable && !self.enable {
-            self.latched_dest = self.dest;
-            self.latched_source = self.source;
-            self.latched_word_count = self.word_count;
+            self.dest.latch();
+            self.source.latch();
+            self.word_count.latch();
         }
 
         self.enable = reg.enable;
