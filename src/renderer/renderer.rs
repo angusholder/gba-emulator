@@ -32,24 +32,24 @@ const OAM_TIMING_U8: Cycle = Cycle(1);
 const OAM_TIMING_U16: Cycle = Cycle(1);
 const OAM_TIMING_U32: Cycle = Cycle(1);
 
-const VIRT_HEIGHT: u8 = 226;
-const PHYS_HEIGHT: u8 = 160;
-const VIRT_WIDTH: u16 = 307;
-const PHYS_WIDTH: u16 = 240;
+pub const VIRT_HEIGHT: usize = 228;
+pub const PHYS_HEIGHT: usize = 160;
+pub const VIRT_WIDTH: usize = 308;
+pub const PHYS_WIDTH: usize = 240;
 
-const VBLANK_START: u8 = 160;
-const VBLANK_END: u8 = VIRT_HEIGHT;
-const HBLANK_START: u16 = 240;
-const HBLANK_END: u16 = VIRT_WIDTH;
+const VBLANK_START: u8 = PHYS_HEIGHT as u8;
+const VBLANK_END: u8 = VIRT_HEIGHT as u8;
+const HBLANK_START: u16 = PHYS_WIDTH as u16;
+const HBLANK_END: u16 = VIRT_WIDTH as u16;
 
 #[derive(Default, Clone, Copy)]
 pub struct Background {
     // BGCNT
-    priority: u8,
-    char_base_addr: u32,
+    pub priority: u8,
+    pub tile_base_addr: u32,
+    pub map_base_addr: u32,
     mosaic: bool,
-    linear_palettes: bool, // (false=16/16, true=256/1)
-    map_base_addr: u32,
+    pub linear_palettes: bool, // (false=16/16, true=256/1)
     screen_size: u8,
 
     // Used only by bg[2,3]
@@ -68,10 +68,31 @@ pub struct Background {
     pub dmy: u16,
 }
 
+impl Background {
+    pub fn get_size(&self) -> (usize, usize) {
+        match self.screen_size {
+            0 => (256, 256),
+            1 => (512, 256),
+            2 => (256, 512),
+            3 => (512, 512),
+            _ => unreachable!()
+        }
+    }
+
+    pub fn map_count(&self) -> usize {
+        match self.screen_size {
+            0 => 1,
+            1 | 2 => 2,
+            3 => 4,
+            _ => unreachable!()
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Renderer {
-    vram: Buffer,
-    bg_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
+    pub vram: Buffer,
+    pub bg_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
     obj_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
     obj_transforms: [ObjTransform; 32],
     obj_attributes: Box<[ObjAttributes]>, // Always 128, boxed because [T; 128] has no Clone impl
@@ -81,7 +102,7 @@ pub struct Renderer {
     x: u16,
     pub bg: [Background; 4],
 
-    control: DisplayControlReg,
+    pub control: DisplayControlReg,
     vcount_setting: u8,
     vcount_irq_enable: bool,
     hblank_irq_enable: bool,
@@ -118,10 +139,10 @@ impl Renderer {
         cycles += self.remaining_cycles;
         while cycles > Cycle(3) && flags.is_empty() {
             cycles -= 4;
-            if self.x == VIRT_WIDTH {
+            if self.x == VIRT_WIDTH as u16 {
                 self.x = 0;
 
-                if self.scanline == VIRT_HEIGHT {
+                if self.scanline == VIRT_HEIGHT as u8 {
                     self.scanline = 0;
                 } else {
                     self.scanline += 1;
@@ -174,10 +195,10 @@ impl Renderer {
         let cnt = BackgroundControlReg::from(value);
 
         bg.priority = cnt.priority;
-        bg.char_base_addr = (cnt.char_base_block as u32) * 16 * 1024;
+        bg.tile_base_addr = (cnt.tile_base_addr as u32) * 16 * 1024;
+        bg.map_base_addr = (cnt.map_base_block as u32) * 2 * 1024;
         bg.mosaic = cnt.mosaic;
         bg.linear_palettes = cnt.linear_palettes;
-        bg.map_base_addr = (cnt.map_base_block as u32) * 2 * 1024;
         if index == 2 || index == 3 {
             bg.display_area_overflow = cnt.display_area_overflow;
         }
@@ -190,7 +211,7 @@ impl Renderer {
 
         BackgroundControlReg {
             priority: bg.priority,
-            char_base_block: (bg.char_base_addr / (16 * 1024)) as u8,
+            tile_base_addr: (bg.tile_base_addr / (16 * 1024)) as u8,
             mosaic: bg.mosaic,
             linear_palettes: bg.linear_palettes,
             map_base_block: (bg.map_base_addr / (2 * 1024)) as u8,
@@ -429,7 +450,7 @@ fn bgr24_to_rgb15(c: u32) -> u16 {
 
 unpacked_bitfield_struct! {
 #[derive(Clone, Copy, Default, Debug)]
-struct DisplayControlReg: u16 {
+pub struct DisplayControlReg: u16 {
     (0,3) bg_mode: u8,
     (3,1) cgb_mode: bool,
     (4,1) display_frame_select: u8,
@@ -445,7 +466,9 @@ struct DisplayControlReg: u16 {
     (14,1) display_window_1: bool,
     (15,1) display_obj_window: bool,
 }
+}
 
+unpacked_bitfield_struct! {
 struct DisplayStatusReg: u16 {
     (0,1) vblank_flag: bool,
     (1,1) hblank_flag: bool,
@@ -458,7 +481,7 @@ struct DisplayStatusReg: u16 {
 
 struct BackgroundControlReg: u16 {
     (0,2) priority: u8,
-    (2,2) char_base_block: u8,
+    (2,2) tile_base_addr: u8,
     (6,1) mosaic: bool,
     (7,1) linear_palettes: bool,
     (8,5) map_base_block: u8,
