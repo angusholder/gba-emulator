@@ -1,6 +1,7 @@
 use std::cmp::Ord;
 use std::ops::{ Add, AddAssign, Sub, SubAssign };
 use std::fmt;
+use std::slice;
 
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
@@ -384,6 +385,31 @@ impl Buffer {
 
     pub fn len(&self) -> usize {
         self.buffer.len()
+    }
+
+    pub fn slice_u8(&self, base: u32, size: u32) -> &[u8] {
+        let base = base as usize;
+        let size = size as usize;
+        &self.buffer[base..base + size]
+    }
+
+    pub fn slice_u16(&self, base: u32, size: u32) -> &[u16] {
+        let base = base as usize;
+        let size = size as usize;
+        assert!(base & 1 == 0);
+        assert!(base + size + 1 < self.buffer.len());
+        unsafe {
+            slice::from_raw_parts(self.buffer[base..base+size].as_ptr() as *const u16, size)
+        }
+    }
+
+    pub fn slice_u32(&self, base: u32, size: u32) -> &[u32] {
+        let base = base as usize;
+        let size = size as usize;
+        assert!(base & 3 == 0);
+        unsafe {
+            slice::from_raw_parts(self.buffer[base..base+size].as_ptr() as *const u32, size)
+        }
     }
 }
 
