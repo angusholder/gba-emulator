@@ -631,7 +631,7 @@ let value = {operation};
             (ins_name, fn_body) = STM[(up, preindex)]
 
         if writeback:
-            fn_body += '    arm.regs[rn_index] = addr;'
+            fn_body += '    assert!(rn_index != REG_PC);\n    arm.regs[rn_index] = addr;'
             ins_name += '_wb'
 
         fn_body = f'''\
