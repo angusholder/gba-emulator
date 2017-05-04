@@ -1,5 +1,7 @@
 use std::fmt;
+
 use num::FromPrimitive;
+
 use utils::Cycle;
 use interconnect::{ Interconnect, IrqFlags, TIMER0_OVERFLOW, TIMER1_OVERFLOW, TIMER2_OVERFLOW, TIMER3_OVERFLOW };
 use log::*;
@@ -38,7 +40,6 @@ enum TimerState {
     Disabled {
         current_value: u16,
     },
-    Idle,
     Enabled {
         initial_cycle: Cycle,
         initial_value: u16,
@@ -222,7 +223,6 @@ impl Timer {
             }
             TimerState::Cascade { current_value } => current_value,
             TimerState::Disabled { current_value } => current_value,
-            TimerState::Idle => self.reload_value,
         }
     }
 }

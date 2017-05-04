@@ -2,10 +2,11 @@
 
 use std::cmp;
 
+use num::FromPrimitive;
+
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
-use num::FromPrimitive;
 use log::*;
 
 pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {

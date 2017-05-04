@@ -1,4 +1,5 @@
 use num::FromPrimitive;
+
 use interconnect::{ Interconnect, IrqFlags, DMA0, DMA1, DMA2, DMA3 };
 use log::*;
 use utils::Latched;

@@ -1,4 +1,5 @@
 use std::fmt::Write;
+
 use arm7tdmi::{ REG_PC, REG_LR };
 
 static CC_NAMES: [&'static str; 15] = [

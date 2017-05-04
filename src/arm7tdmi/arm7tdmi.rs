@@ -1,6 +1,7 @@
 use std::fmt;
 
 use num::FromPrimitive;
+
 use interconnect::Interconnect;
 use utils::OrderedSet;
 
