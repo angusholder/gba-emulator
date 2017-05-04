@@ -1,5 +1,5 @@
 use utils::{ Buffer, Cycle, sign_extend };
-use renderer::Renderer;
+use renderer::{ Renderer, FrameBuffer };
 use dma::{ Dma, DmaUnit, step_dma_units, dma_on_vblank, dma_on_hblank };
 use timer::{ Timer, TimerUnit, step_timers };
 use gamepak::GamePak;
@@ -121,7 +121,7 @@ impl Interconnect {
         }
     }
 
-    pub fn step(&mut self, arm: &mut Arm7TDMI) -> StepEvent {
+    pub fn step(&mut self, arm: &mut Arm7TDMI, buffer: &mut FrameBuffer) -> StepEvent {
         let mut flags = IrqFlags::empty();
 
         let start_cycle = self.cycles;
@@ -137,7 +137,7 @@ impl Interconnect {
         }
 
         let current_cycle = self.cycles;
-        flags |= self.renderer.step_cycles(current_cycle - start_cycle);
+        flags |= self.renderer.step_cycles(current_cycle - start_cycle, buffer);
         flags |= step_timers(self, current_cycle);
 
         if flags.contains(LCD_VBLANK) {

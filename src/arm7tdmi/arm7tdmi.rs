@@ -75,10 +75,10 @@ pub struct StatusRegister {
     pub c: bool,
     pub v: bool,
 
-    pub irq_disable: bool,
-    pub fiq_disable: bool,
-    pub thumb_mode: bool,
-    pub mode: OperatingMode,
+    irq_disable: bool,
+    fiq_disable: bool,
+    thumb_mode: bool,
+    mode: OperatingMode,
 }
 
 impl From<u32> for StatusRegister {
@@ -88,6 +88,7 @@ impl From<u32> for StatusRegister {
             z: (1 << 30) & bits != 0,
             c: (1 << 29) & bits != 0,
             v: (1 << 28) & bits != 0,
+
             irq_disable: (1 << 7) & bits != 0,
             fiq_disable: (1 << 6) & bits != 0,
             thumb_mode: (1 << 5) & bits != 0,
@@ -103,6 +104,7 @@ impl From<StatusRegister> for u32 {
         bits |= (sr.z as u32) << 30;
         bits |= (sr.c as u32) << 29;
         bits |= (sr.v as u32) << 28;
+
         bits |= (sr.irq_disable as u32) << 7;
         bits |= (sr.fiq_disable as u32) << 6;
         bits |= (sr.thumb_mode as u32) << 5;
@@ -134,6 +136,7 @@ impl fmt::Display for StatusRegister {
             z = if self.z {"z"} else {"-"},
             c = if self.c {"c"} else {"-"},
             v = if self.v {"v"} else {"-"},
+
             t = if self.thumb_mode {"t"} else {"-"},
             irq = if self.irq_disable {""} else {", irq"},
             fiq = if self.fiq_disable {""} else {", fiq"},
@@ -143,11 +146,21 @@ impl fmt::Display for StatusRegister {
 }
 
 impl StatusRegister {
-    pub fn set_flags(&mut self, bits: u32) {
-        self.n = bits & (1 << 31) != 0;
-        self.z = bits & (1 << 30) != 0;
-        self.c = bits & (1 << 29) != 0;
-        self.v = bits & (1 << 28) != 0;
+    pub fn set_flags_from_bits(&mut self, bits: u32) {
+        let sr = StatusRegister::from(bits);
+
+        self.n = sr.n;
+        self.z = sr.z;
+        self.c = sr.c;
+        self.v = sr.v;
+    }
+
+    pub fn get_mode(&self) -> OperatingMode {
+        self.mode
+    }
+
+    pub fn get_thumb_mode(&self) -> bool {
+        self.thumb_mode
     }
 }
 
@@ -267,7 +280,8 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn set_cpsr(&mut self, new: StatusRegister) {
+    pub fn set_cpsr_from_bits(&mut self, bits: u32) {
+        let new = StatusRegister::from(bits);
         assert!(new.thumb_mode == self.cpsr.thumb_mode);
         if new.mode != self.cpsr.mode {
             let cur_mode = self.cpsr.mode;
@@ -277,34 +291,21 @@ impl Arm7TDMI {
         self.cpsr = new;
     }
 
-    pub fn get_spsr(&self) -> StatusRegister {
+    pub fn get_spsr(&self) -> Option<StatusRegister> {
         match self.cpsr.mode {
-            OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
-            OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::None => unreachable!(),
-            OperatingMode::Supervisor => self.svc_spsr,
-            OperatingMode::Irq        => self.irq_spsr,
-            OperatingMode::Undefined  => self.und_spsr,
+            OperatingMode::User | OperatingMode::System | OperatingMode::None => None,
+            OperatingMode::Supervisor => Some(self.svc_spsr),
+            OperatingMode::Irq        => Some(self.irq_spsr),
+            OperatingMode::Undefined  => Some(self.und_spsr),
         }
     }
 
-    pub fn get_spsr_mut(&mut self) -> &mut StatusRegister {
+    pub fn get_spsr_mut(&mut self) -> Option<&mut StatusRegister> {
         match self.cpsr.mode {
-            OperatingMode::User => panic!("SPSR doesn't exist in User mode."),
-            OperatingMode::System => panic!("SPSR doesn't exist in System mode."),
-            OperatingMode::None => unreachable!(),
-            OperatingMode::Supervisor => &mut self.svc_spsr,
-            OperatingMode::Irq        => &mut self.irq_spsr,
-            OperatingMode::Undefined  => &mut self.und_spsr,
-        }
-    }
-
-    pub fn has_spsr(&self) -> bool {
-        match self.cpsr.mode {
-            OperatingMode::User |
-            OperatingMode::System |
-            OperatingMode::None => false,
-            _ => true,
+            OperatingMode::User | OperatingMode::System | OperatingMode::None => None,
+            OperatingMode::Supervisor => Some(&mut self.svc_spsr),
+            OperatingMode::Irq        => Some(&mut self.irq_spsr),
+            OperatingMode::Undefined  => Some(&mut self.und_spsr),
         }
     }
 

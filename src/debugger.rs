@@ -11,6 +11,7 @@ use arm7tdmi::{ StepEvent, Arm7TDMI };
 use interconnect::Interconnect;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use log::{ self, LogKind, LogLevel };
+use renderer::FrameBuffer;
 
 fn int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<N>
         where Iter: Iterator<Item=&'a str> {
@@ -205,6 +206,7 @@ struct EmulationState {
 pub struct Debugger {
     arm: Arm7TDMI,
     interconnect: Interconnect,
+    buffer: FrameBuffer,
     save_states: HashMap<String, EmulationState>,
     temp_breakpoints: HashSet<u32>,
     temp_watchpoints: HashSet<u32>,
@@ -215,6 +217,7 @@ impl Debugger {
         Debugger {
             arm: arm,
             interconnect: interconnect,
+            buffer: FrameBuffer::new(),
             save_states: HashMap::new(),
             temp_breakpoints: HashSet::new(),
             temp_watchpoints: HashSet::new(),
@@ -222,7 +225,7 @@ impl Debugger {
     }
 
     fn disassemble(&mut self) {
-        let thumb_mode = self.arm.cpsr.thumb_mode;
+        let thumb_mode = self.arm.cpsr.get_thumb_mode();
         let addr = self.arm.current_pc();
         if thumb_mode {
             let op = self.interconnect.exec_thumb_slow(addr);
@@ -232,12 +235,11 @@ impl Debugger {
             let op = self.interconnect.exec_arm_slow(addr);
             let dis = disassemble_arm_opcode(op, addr);
             println!("0x{:07X}: ({:08X}) {}", addr, op, dis);
-        };
-
+        }
     }
 
     fn step(&mut self, print_state: bool) -> bool {
-        let event = self.arm.step(&mut self.interconnect);
+        let event = self.interconnect.step(&mut self.arm, &mut self.buffer);
         if print_state {
             println!("{:?}\n", self.arm);
         }

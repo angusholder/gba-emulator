@@ -1,10 +1,59 @@
+use std::ops::{ Index, IndexMut };
+
 use super::renderer::{ Renderer, Background, PHYS_WIDTH, PHYS_HEIGHT };
 
 const TILE_SIZE_4BIT: usize = 0x20;
 const TILE_SIZE_8BIT: usize = 0x20;
 
-pub type FrameLine = [u32; PHYS_WIDTH];
-pub type FrameBuffer = [FrameLine; PHYS_HEIGHT];
+#[derive(Copy)]
+pub struct FrameLine([u32; PHYS_WIDTH]);
+
+impl Clone for FrameLine {
+    fn clone(&self) -> FrameLine {
+        *self
+    }
+}
+
+impl Index<usize> for FrameLine {
+    type Output = u32;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for FrameLine {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+#[derive(Copy)]
+pub struct FrameBuffer([FrameLine; PHYS_HEIGHT]);
+
+impl FrameBuffer {
+    pub fn new() -> Self {
+        FrameBuffer([FrameLine([0u32; PHYS_WIDTH]); PHYS_HEIGHT])
+    }
+}
+
+impl Clone for FrameBuffer {
+    fn clone(&self) -> FrameBuffer {
+        *self
+    }
+}
+
+impl Index<usize> for FrameBuffer {
+    type Output = FrameLine;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for FrameBuffer {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
 
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Layer {

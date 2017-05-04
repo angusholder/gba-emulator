@@ -88,8 +88,13 @@ fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> S
 
     debug_assert!(rd_index != REG_PC);
 
-    let value = if ps {
-        arm.get_spsr().into()
+    let value: u32 = if ps {
+        if let Some(spsr) = arm.get_spsr() {
+            spsr.into()
+        } else {
+            warn!(CPU, "Tried to get SPSR in mode {:?} which has no SPSR", arm.cpsr.get_mode());
+            0
+        }
     } else {
         arm.cpsr.into()
     };
@@ -116,10 +121,24 @@ fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> S
     let rm = arm.regs[rm_index];
 
     match (pd, flags) {
-        (true, true) => arm.get_spsr_mut().set_flags(rm),
-        (false, true) => arm.cpsr.set_flags(rm),
-        (true, false) => *arm.get_spsr_mut() = rm.into(),
-        (false, false) => arm.set_cpsr(rm.into()),
+        (false, true) => arm.cpsr.set_flags_from_bits(rm),
+        (false, false) => arm.set_cpsr_from_bits(rm),
+        (true, true) => {
+            let mode = arm.cpsr.get_mode();
+            if let Some(spsr) = arm.get_spsr_mut() {
+                spsr.set_flags_from_bits(rm);
+            } else {
+                warn!(CPU, "Tried to set flags of SPSR in mode {:?} which has no SPSR", mode);
+            }
+        }
+        (true, false) => {
+            let mode = arm.cpsr.get_mode();
+            if let Some(spsr) = arm.get_spsr_mut() {
+                *spsr = rm.into();
+            } else {
+                warn!(CPU, "Tried to set SPSR in mode {:?} which has no SPSR", mode);
+            }
+        }
     }
 
     StepEvent::None
@@ -137,9 +156,14 @@ fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32)
     let value = imm.rotate_right(rotate);
 
     if pd {
-        arm.get_spsr_mut().set_flags(value);
+        let mode = arm.cpsr.get_mode();
+        if let Some(spsr) = arm.get_spsr_mut() {
+            spsr.set_flags_from_bits(value)
+        } else {
+            warn!(CPU, "Tried to set flags of SPSR in mode {:?} which has no SPSR", mode);
+        }
     } else {
-        arm.cpsr.set_flags(value);
+        arm.cpsr.set_flags_from_bits(value);
     }
 
     StepEvent::None

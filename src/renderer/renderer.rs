@@ -2,6 +2,8 @@ use utils::{ Buffer, Cycle };
 use interconnect::{ IrqFlags, LCD_VBLANK, LCD_HBLANK, LCD_VCOUNTER_MATCH };
 use log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
+use super::mode0;
+use super::FrameBuffer;
 
 const ADDR_UPPER_MASK: u32 = 0xFF00_0000;
 
@@ -134,7 +136,7 @@ impl Renderer {
         }
     }
 
-    pub fn step_cycles(&mut self, mut cycles: Cycle) -> IrqFlags {
+    pub fn step_cycles(&mut self, mut cycles: Cycle, buffer: &mut FrameBuffer) -> IrqFlags {
         let mut flags = IrqFlags::empty();
         cycles += self.remaining_cycles;
         while cycles > Cycle(3) && flags.is_empty() {
@@ -153,6 +155,7 @@ impl Renderer {
                 }
 
                 if self.scanline == VBLANK_START {
+                    self.render_line(buffer);
                     if self.vblank_irq_enable {
                         flags |= LCD_VBLANK;
                         note!(GPU, "VBlank started with IRQ signal");
@@ -186,6 +189,15 @@ impl Renderer {
         self.remaining_cycles = cycles;
 
         flags
+    }
+
+    fn render_line(&mut self, buffer: &mut FrameBuffer) {
+        match self.control.bg_mode {
+            0 => mode0::render_line(self, buffer),
+            1...5 => unimplemented!(),
+            6 | 7 => unreachable!(),
+            _ => unreachable!(),
+        }
     }
 
     pub fn write_bgcnt(&mut self, index: usize, value: u16) {
