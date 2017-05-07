@@ -1,4 +1,4 @@
-#![allow(unused_mut, unused_variables, private_no_mangle_fns, unused_assignments)]
+#![allow(unused_variables, private_no_mangle_fns, unused_assignments)]
 
 use std::cmp;
 

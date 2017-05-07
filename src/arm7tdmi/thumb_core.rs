@@ -1,4 +1,4 @@
-#![allow(unused_mut, unused_variables)]
+#![allow(unused_variables, private_no_mangle_fns)]
 
 use std::mem;
 

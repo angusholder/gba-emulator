@@ -662,7 +662,8 @@ def decode(i):
 
 FN_TEMPLATE = '''\
 // {example}
-fn op_{ins_name}(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {{
+#[no_mangle]
+fn opt_{ins_name}(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {{
 {fn_body}
 
     StepEvent::None
@@ -675,7 +676,7 @@ def writelines(output):
     fn_bodies = {}
     for i in range(0, 1 << 10):
         (ins_name, example, fn_body) = decode(i)
-        names.append('op_' + ins_name)
+        names.append('opt_' + ins_name)
         examples[ins_name] = example
         if fn_bodies.get(ins_name):
             assert fn_bodies[ins_name] == fn_body

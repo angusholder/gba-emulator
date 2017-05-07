@@ -322,9 +322,10 @@ impl Renderer {
         VRAM_TIMING_U32
     }
 
-    pub fn oam_write8(&mut self, addr: u32, _value: u8) -> Cycle {
+    pub fn oam_write8(&mut self, addr: u32, value: u8) -> Cycle {
         assert!(addr & ADDR_UPPER_MASK == OAM_START);
         // 8-bit writes ignored
+        warn!(GPU, "Ignored 8-bit write to OAM at 0x{:07X} of {:X}", addr, value);
         OAM_TIMING_U8
     }
     pub fn oam_write16(&mut self, addr: u32, value: u16) -> Cycle {
@@ -387,15 +388,15 @@ impl Renderer {
 
     pub fn vram_read8(&self, addr: u32) -> (Cycle, u8) {
         assert!(addr & ADDR_UPPER_MASK == VRAM_START);
-        (VRAM_TIMING_U8, self.vram.read8(vram_mask(addr - VRAM_START)))
+        (VRAM_TIMING_U8, self.vram.read8(vram_mask(addr)))
     }
     pub fn vram_read16(&self, addr: u32) -> (Cycle, u16) {
         assert!(addr & ADDR_UPPER_MASK == VRAM_START);
-        (VRAM_TIMING_U16, self.vram.read16(vram_mask(addr - VRAM_START)))
+        (VRAM_TIMING_U16, self.vram.read16(vram_mask(addr)))
     }
     pub fn vram_read32(&self, addr: u32) -> (Cycle, u32) {
         assert!(addr & ADDR_UPPER_MASK == VRAM_START);
-        (VRAM_TIMING_U32, self.vram.read32(vram_mask(addr - VRAM_START)))
+        (VRAM_TIMING_U32, self.vram.read32(vram_mask(addr)))
     }
 
     pub fn oam_read8(&self, addr: u32) -> (Cycle, u8) {

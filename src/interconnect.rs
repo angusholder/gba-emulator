@@ -7,21 +7,18 @@ use log::*;
 use log;
 use arm7tdmi::{ Arm7TDMI, StepEvent };
 
-const ROM_START: u32 = 0x0000_0000;
 const ROM_SIZE: u32 = 0x4000;
 const ROM_MASK: u32 = ROM_SIZE - 1;
 const ROM_TIMING_U8: Cycle = Cycle(1);
 const ROM_TIMING_U16: Cycle = Cycle(1);
 const ROM_TIMING_U32: Cycle = Cycle(1);
 
-const EWRAM_START: u32 = 0x0200_0000;
 const EWRAM_SIZE: u32 = 256 * 1024;
 const EWRAM_MASK: u32 = EWRAM_SIZE - 1;
 const EWRAM_TIMING_U8: Cycle = Cycle(3);
 const EWRAM_TIMING_U16: Cycle = Cycle(3);
 const EWRAM_TIMING_U32: Cycle = Cycle(6);
 
-const IWRAM_START: u32 = 0x0300_0000;
 const IWRAM_SIZE: u32 = 32 * 1024;
 const IWRAM_MASK: u32 = IWRAM_SIZE - 1;
 const IWRAM_TIMING_U8: Cycle = Cycle(1);
@@ -32,15 +29,26 @@ const IO_TIMING_U8: Cycle = Cycle(1);
 const IO_TIMING_U16: Cycle = Cycle(1);
 const IO_TIMING_U32: Cycle = Cycle(1);
 
+const BASE_ROM: u32 = 0x0;
+const BASE_EWRAM: u32 = 0x2;
+const BASE_IWRAM: u32 = 0x3;
+const BASE_IOREGS: u32 = 0x4;
+const BASE_PALETTE: u32 = 0x5;
+const BASE_VRAM: u32 = 0x6;
+const BASE_OAM: u32 = 0x7;
+const BASE_GAMEPAK_START: u32 = 0x8;
+const BASE_GAMEPAK_END: u32 = 0xD;
+
 macro_rules! unhandled_read {
-    ($addr:expr) => {
-        error!(IO, "Unhandled read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF)
-    }
+    ($self:expr, $addr:expr) => ({
+        warn!(IO, "Out of range read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF);
+        (Cycle(1), $self.prefetch[1] as _)
+    })
 }
 
 macro_rules! unhandled_write {
     ($addr:expr, $value:expr) => {
-        error!(IO, "Unhandled write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
+        error!(IO, "Out of range write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
     }
 }
 
@@ -164,38 +172,26 @@ impl Interconnect {
 
     pub fn debug_read8(&self, addr: u32) -> (Cycle, u8) {
         match addr >> 24 {
-            0x0 | 0x1 => { // rom
-                // TODO: Handle out of bounds, currently we panic
+            BASE_ROM if addr < ROM_SIZE => {
                 let read = if self.pc_inside_bios {
                     self.rom.read8(addr)
                 } else {
+                    warn!(BIOS, "Tried to read bios at 0x{:07X} while executing outside it", addr);
                     0
                 };
                 (ROM_TIMING_U8, read)
             }
-            0x2 => { // ewram
-                (EWRAM_TIMING_U8, self.ewram.read8((addr - EWRAM_START) & EWRAM_MASK))
-            }
-            0x3 => { // iwram
-                (IWRAM_TIMING_U8, self.iwram.read8((addr - IWRAM_START) & IWRAM_MASK))
-            }
-            0x4 => { // io registers
-                (IO_TIMING_U8, self.ioread8(addr))
-            }
-            0x5 => { // palette
-                self.renderer.palette_read8(addr)
-            }
-            0x6 => { // vram
-                self.renderer.vram_read8(addr)
-            }
-            0x7 => { // oam
-                self.renderer.oam_read8(addr)
-            }
-            0x8...0xD => { // GamePak ROM
+            BASE_EWRAM => (EWRAM_TIMING_U8, self.ewram.read8(addr & EWRAM_MASK)),
+            BASE_IWRAM => (IWRAM_TIMING_U8, self.iwram.read8(addr & IWRAM_MASK)),
+            BASE_IOREGS => (IO_TIMING_U8, self.ioread8(addr)),
+            BASE_PALETTE => self.renderer.palette_read8(addr),
+            BASE_VRAM => self.renderer.vram_read8(addr),
+            BASE_OAM => self.renderer.oam_read8(addr),
+            BASE_GAMEPAK_START...BASE_GAMEPAK_END => {
                 self.gamepak.read8(addr)
             }
 
-            _ => unhandled_read!(addr)
+            _ => unhandled_read!(self, addr)
         }
     }
 
@@ -203,38 +199,26 @@ impl Interconnect {
         assert!(addr & 1 == 0, "Unaligned halfword read at 0x{:08X}", addr);
 
         match addr >> 24 {
-            0x0 | 0x1 => { // rom
-                // TODO: Handle out of bounds, currently we panic
+            BASE_ROM if addr < ROM_SIZE => {
                 let read = if self.pc_inside_bios {
                     self.rom.read16(addr)
                 } else {
+                    warn!(BIOS, "Tried to read bios at 0x{:07X} while executing outside it", addr);
                     0
                 };
                 (ROM_TIMING_U16, read)
             }
-            0x2 => { // ewram
-                (EWRAM_TIMING_U16, self.ewram.read16(addr & EWRAM_MASK))
-            }
-            0x3 => { // iwram
-                (IWRAM_TIMING_U16, self.iwram.read16(addr & IWRAM_MASK))
-            }
-            0x4 => { // io registers
-                (IO_TIMING_U16, self.ioread16(addr))
-            }
-            0x5 => { // palette
-                self.renderer.palette_read16(addr)
-            }
-            0x6 => { // vram
-                self.renderer.vram_read16(addr)
-            }
-            0x7 => { // oam
-                self.renderer.oam_read16(addr)
-            }
-            0x8...0xD => { // GamePak ROM
+            BASE_EWRAM => (EWRAM_TIMING_U16, self.ewram.read16(addr & EWRAM_MASK)),
+            BASE_IWRAM => (IWRAM_TIMING_U16, self.iwram.read16(addr & IWRAM_MASK)),
+            BASE_IOREGS => (IO_TIMING_U16, self.ioread16(addr)),
+            BASE_PALETTE => self.renderer.palette_read16(addr),
+            BASE_VRAM => self.renderer.vram_read16(addr),
+            BASE_OAM => self.renderer.oam_read16(addr),
+            BASE_GAMEPAK_START...BASE_GAMEPAK_END => {
                 self.gamepak.read16(addr)
             }
 
-            _ => unhandled_read!(addr)
+            _ => unhandled_read!(self, addr)
         }
     }
 
@@ -242,64 +226,46 @@ impl Interconnect {
         assert!(addr & 3 == 0, "Unaligned word read at 0x{:08X}", addr);
 
         match addr >> 24 {
-            0x0 | 0x1 => { // rom
-                // TODO: Handle out of bounds, currently we panic
+            BASE_ROM if addr < ROM_SIZE => {
                 let read = if self.pc_inside_bios {
                     self.rom.read32(addr)
                 } else {
+                    warn!(BIOS, "Tried to read bios at 0x{:07X} while executing outside it", addr);
                     0
                 };
                 (ROM_TIMING_U32, read)
             }
-            0x2 => { // ewram
-                (EWRAM_TIMING_U32, self.ewram.read32(addr & EWRAM_MASK))
-            }
-            0x3 => { // iwram
-                (IWRAM_TIMING_U32, self.iwram.read32(addr & IWRAM_MASK))
-            }
-            0x4 => { // io registers
-                (IO_TIMING_U32, self.ioread32(addr))
-            }
-            0x5 => { // palette
-                self.renderer.palette_read32(addr)
-            }
-            0x6 => { // vram
-                self.renderer.vram_read32(addr)
-            }
-            0x7 => { // oam
-                self.renderer.oam_read32(addr)
-            }
-            0x8...0xD => { // GamePak ROM
+            BASE_EWRAM => (EWRAM_TIMING_U32, self.ewram.read32(addr & EWRAM_MASK)),
+            BASE_IWRAM => (IWRAM_TIMING_U32, self.iwram.read32(addr & IWRAM_MASK)),
+            BASE_IOREGS => (IO_TIMING_U32, self.ioread32(addr)),
+            BASE_PALETTE => self.renderer.palette_read32(addr),
+            BASE_VRAM => self.renderer.vram_read32(addr),
+            BASE_OAM => self.renderer.oam_read32(addr),
+            BASE_GAMEPAK_START...BASE_GAMEPAK_END => {
                 self.gamepak.read32(addr)
             }
 
-            _ => unhandled_read!(addr)
+            _ => unhandled_read!(self, addr)
         }
     }
 
     pub fn debug_write8(&mut self, addr: u32, value: u8) -> Cycle {
         match addr >> 24 {
-            0x2 => { // ewram
-                self.ewram.write8((addr - EWRAM_START) & EWRAM_MASK, value);
+            BASE_EWRAM => { // ewram
+                self.ewram.write8(addr & EWRAM_MASK, value);
                 EWRAM_TIMING_U8
             }
-            0x3 => { // iwram
-                self.iwram.write8((addr - IWRAM_START) & IWRAM_MASK, value);
+            BASE_IWRAM => { // iwram
+                self.iwram.write8(addr & IWRAM_MASK, value);
                 IWRAM_TIMING_U8
             }
-            0x4 => { // io registers
+            BASE_IOREGS => { // io registers
                 self.iowrite8(addr, value);
                 IO_TIMING_U8
             }
-            0x5 => { // palette
-                self.renderer.palette_write8(addr, value)
-            }
-            0x6 => { // vram
-                self.renderer.vram_write8(addr, value)
-            }
-            0x7 => { // oam
-                self.renderer.oam_write8(addr, value)
-            }
+            BASE_PALETTE => self.renderer.palette_write8(addr, value),
+            BASE_VRAM => self.renderer.vram_write8(addr, value),
+            BASE_OAM => self.renderer.oam_write8(addr, value),
 
             _ => unhandled_write!(addr, value),
         }
@@ -309,27 +275,21 @@ impl Interconnect {
         assert!(addr & 1 == 0, "Unaligned halfword write at 0x{:08X} of 0x{:08X}", addr, value);
 
         match addr >> 24 {
-            0x2 => { // ewram
-                self.ewram.write16((addr - EWRAM_START) & EWRAM_MASK, value);
+            BASE_EWRAM => { // ewram
+                self.ewram.write16(addr & EWRAM_MASK, value);
                 EWRAM_TIMING_U16
             }
-            0x3 => { // iwram
-                self.iwram.write16((addr - IWRAM_START) & IWRAM_MASK, value);
+            BASE_IWRAM => { // iwram
+                self.iwram.write16(addr & IWRAM_MASK, value);
                 IWRAM_TIMING_U16
             }
-            0x4 => { // io registers
+            BASE_IOREGS => { // io registers
                 self.iowrite16(addr, value);
                 IO_TIMING_U16
             }
-            0x5 => { // palette
-                self.renderer.palette_write16(addr, value)
-            }
-            0x6 => { // vram
-                self.renderer.vram_write16(addr, value)
-            }
-            0x7 => { // oam
-                self.renderer.oam_write16(addr, value)
-            }
+            BASE_PALETTE => self.renderer.palette_write16(addr, value),
+            BASE_VRAM => self.renderer.vram_write16(addr, value),
+            BASE_OAM => self.renderer.oam_write16(addr, value),
 
             _ => unhandled_write!(addr, value),
         }
@@ -339,27 +299,21 @@ impl Interconnect {
         assert!(addr & 3 == 0, "Unaligned word write at 0x{:08X} of 0x{:08X}", addr, value);
 
         match addr >> 24 {
-            0x2 => { // ewram
-                self.ewram.write32((addr - EWRAM_START) & EWRAM_MASK, value);
+            BASE_EWRAM => { // ewram
+                self.ewram.write32(addr & EWRAM_MASK, value);
                 EWRAM_TIMING_U32
             }
-            0x3 => { // iwram
-                self.iwram.write32((addr - IWRAM_START) & IWRAM_MASK, value);
+            BASE_IWRAM => { // iwram
+                self.iwram.write32(addr & IWRAM_MASK, value);
                 IWRAM_TIMING_U32
             }
-            0x4 => { // io registers
+            BASE_IOREGS => { // io registers
                 self.iowrite32(addr, value);
                 IO_TIMING_U32
             }
-            0x5 => { // palette
-                self.renderer.palette_write32(addr, value)
-            }
-            0x6 => { // vram
-                self.renderer.vram_write32(addr, value)
-            }
-            0x7 => { // oam
-                self.renderer.oam_write32(addr, value)
-            }
+            BASE_PALETTE => self.renderer.palette_write32(addr, value),
+            BASE_VRAM => self.renderer.vram_write32(addr, value),
+            BASE_OAM => self.renderer.oam_write32(addr, value),
 
             _ => unhandled_write!(addr, value),
         }
