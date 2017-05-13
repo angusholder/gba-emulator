@@ -91,13 +91,12 @@ impl Background {
     }
 }
 
-#[derive(Clone)]
 pub struct Renderer {
     pub vram: Buffer,
-    pub bg_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
-    obj_palette: Box<[u32]>, // Always 256, boxed because [T; 256] has no Clone impl
+    pub bg_palette: [u32; 256],
+    obj_palette: [u32; 256],
     obj_transforms: [ObjTransform; 32],
-    obj_attributes: Box<[ObjAttributes]>, // Always 128, boxed because [T; 128] has no Clone impl
+    obj_attributes: [ObjAttributes; 128],
 
     // These are accessed directly by io r/w routines in the interconnect
     pub scanline: u8,
@@ -113,14 +112,20 @@ pub struct Renderer {
     remaining_cycles: Cycle,
 }
 
+impl Clone for Renderer {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 impl Renderer {
     pub fn new() -> Renderer {
         Renderer {
             vram: Buffer::with_capacity(VRAM_SIZE),
-            bg_palette: vec![0; 256].into_boxed_slice(),
-            obj_palette: vec![0; 256].into_boxed_slice(),
+            bg_palette: [0; 256],
+            obj_palette: [0; 256],
             obj_transforms: [ObjTransform::default(); 32],
-            obj_attributes: vec![ObjAttributes::default(); 128].into_boxed_slice(),
+            obj_attributes: [ObjAttributes::default(); 128],
 
             scanline: 0,
             x: 0,

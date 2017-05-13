@@ -1,38 +1,26 @@
 use std::ops::{ Index, IndexMut };
+use std::mem;
 
 use super::renderer::{ Renderer, Background, PHYS_WIDTH, PHYS_HEIGHT };
 
 const TILE_SIZE_4BIT: usize = 0x20;
 const TILE_SIZE_8BIT: usize = 0x20;
 
-#[derive(Copy)]
-pub struct FrameLine([u32; PHYS_WIDTH]);
+pub type FrameLine = [u32; PHYS_WIDTH];
 
-impl Clone for FrameLine {
-    fn clone(&self) -> FrameLine {
-        *self
-    }
+pub struct FrameBuffer {
+    buffer: Box<[u32; PHYS_HEIGHT * PHYS_WIDTH]>,
 }
-
-impl Index<usize> for FrameLine {
-    type Output = u32;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-
-impl IndexMut<usize> for FrameLine {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
-}
-
-#[derive(Copy)]
-pub struct FrameBuffer([FrameLine; PHYS_HEIGHT]);
 
 impl FrameBuffer {
     pub fn new() -> Self {
-        FrameBuffer([FrameLine([0u32; PHYS_WIDTH]); PHYS_HEIGHT])
+        FrameBuffer {
+            buffer: Box::new([0u32; PHYS_WIDTH * PHYS_HEIGHT]),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u32] {
+        &self.buffer[..]
     }
 }
 
@@ -45,13 +33,19 @@ impl Clone for FrameBuffer {
 impl Index<usize> for FrameBuffer {
     type Output = FrameLine;
     fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+        let slice = &self.buffer[index*PHYS_WIDTH..(index+1)*PHYS_WIDTH];
+        unsafe {
+            mem::transmute::<*const u32, &Self::Output>(slice.as_ptr())
+        }
     }
 }
 
 impl IndexMut<usize> for FrameBuffer {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
+        let slice = &mut self.buffer[index*PHYS_WIDTH..(index+1)*PHYS_WIDTH];
+        unsafe {
+            mem::transmute::<*mut u32, &mut Self::Output>(slice.as_mut_ptr())
+        }
     }
 }
 
@@ -103,9 +97,7 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
         let tile_pixels = r.vram.slice_u8(bg.tile_base_addr + tile_index, 16);
 
-        let mut bg_x_lower = bg_x & 7;
-
-        loop {
+        for bg_x_lower in bg_x&7 .. 8 {
             let tile_inner_x = bg_x_lower ^ hflip_mask;
             let pixel_offset = (tile_inner_x >> 1) | tile_inner_y_shifted;
             let pixel_shift = (tile_inner_x & 1) * 4;
@@ -115,12 +107,7 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
                 line[x] = palette[color_index as usize];
             }
 
-            bg_x_lower += 1;
             x += 1;
-            if bg_x_lower & 7 == 0 {
-                // next tile
-                break;
-            }
         }
     }
 }
@@ -130,7 +117,6 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
     let (bg_width, bg_height) = bg.get_size();
     let map_entries = r.vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
-    let palette = &r.bg_palette[0..256];
 
     let bg_y = (r.scanline as u16 + bg.y_offset) as usize;
     if bg_y > bg_height {
@@ -163,23 +149,16 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
         let tile_pixels = r.vram.slice_u8(bg.tile_base_addr + tile_index, 32);
 
-        let mut bg_x_lower = bg_x & 7;
-
-        loop {
+        for bg_x_lower in bg_x&7 .. 8 {
             let tile_inner_x = bg_x_lower ^ hflip_mask;
             let pixel_offset = tile_inner_x | tile_inner_y_shifted;
 
             let color_index = tile_pixels[pixel_offset];
             if color_index != 0 {
-                line[x] = palette[color_index as usize];
+                line[x] = r.bg_palette[color_index as usize];
             }
 
-            bg_x_lower += 1;
             x += 1;
-            if bg_x_lower & 7 == 0 {
-                // next tile
-                break;
-            }
         }
     }
 }
