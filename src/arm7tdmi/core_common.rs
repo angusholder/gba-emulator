@@ -4,7 +4,8 @@ pub use utils::sign_extend;
 macro_rules! check_watchpoint {
     ($arm:expr, $addr:expr) => {
         if $arm.watchpoints.contains($addr) {
-            return StepEvent::TriggerWatchpoint($addr);
+            println!("Triggered watchpoint at {:08X}!", $addr)
+//            return StepEvent::TriggerWatchpoint($addr);
         }
     }
 }

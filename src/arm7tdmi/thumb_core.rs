@@ -1,5 +1,7 @@
 #![allow(unused_variables, private_no_mangle_fns)]
 
+use std::mem::size_of;
+
 use num::NumCast;
 
 use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
@@ -120,6 +122,29 @@ fn ldr_reg_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: 
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
     arm.regs[op.reg3(0)] = f(ic, addr);
+}
+
+fn str_imm_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
+    where F: Fn(&mut Interconnect, u32, T)
+{
+    let rd = arm.regs[op.reg3(0)];
+    let rb = arm.regs[op.reg3(3)];
+    let offset = op.imm5(6) * size_of::<T>() as u32;
+    let addr = rb.wrapping_add(offset);
+    check_watchpoint!(arm, addr);
+    f(ic, addr, T::from(rd).unwrap());
+}
+
+fn ldr_imm_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, size_of_t: usize, f: F)
+    where F: Fn(&mut Interconnect, u32) -> u32
+{
+    let rb = arm.regs[op.reg3(3)];
+    let offset = op.imm5(6) * size_of_t as u32;
+    let addr = rb.wrapping_add(offset);
+    check_watchpoint!(arm, addr);
+    arm.regs[op.reg3(0)] = f(ic, addr);
+    // TODO: The instruction cycle times for the THUMB instruction are identical to that of the equivalent ARM instruction. For more information on instruction cycle times, please refer to Chapter 10, Instruction Cycle Operations.
+    ic.add_internal_cycles(1); // internal cycle for address calculation
 }
 
 //bitflags!()
@@ -398,6 +423,38 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ("0101 101 ooo bbb ddd", "LDSB Rd, [Rb, Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i8);
+        }
+    ),
+
+    ("011 00 iiiii bbb ddd", "STR Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            str_imm_offset(arm, ic, op, Interconnect::write32);
+        }
+    ),
+    ("1000 0 iiiii bbb ddd", "STRH Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            str_imm_offset(arm, ic, op, Interconnect::write16);
+        }
+    ),
+    ("011 10 iiiii bbb ddd", "STRB Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            str_imm_offset(arm, ic, op, Interconnect::write8);
+        }
+    ),
+
+    ("011 01 iiiii bbb ddd", "LDR Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            ldr_imm_offset(arm, ic, op, size_of::<u32>(), Interconnect::read32);
+        }
+    ),
+    ("1000 1 iiiii bbb ddd", "LDRH Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            ldr_imm_offset(arm, ic, op, size_of::<u16>(), Interconnect::read_ext_u16);
+        }
+    ),
+    ("011 11 iiiii bbb ddd", "LDRB Rd, [Rb, #Imm]",
+        |arm, ic, op| {
+            ldr_imm_offset(arm, ic, op, size_of::<u8>(), Interconnect::read_ext_u8);
         }
     ),
 ];
