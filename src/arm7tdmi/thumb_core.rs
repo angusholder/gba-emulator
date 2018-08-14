@@ -498,4 +498,86 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[REG_SP] -= op.imm8() & !0x80;
         }
     ),
+
+    ("1011 010 iiiiiiiii", "PUSH { Rlist }",
+        |arm, ic, op| {
+            let reglist = op.imm8();
+            let store_lr = op.field::<u16>(8, 1) != 0;
+            let mut sp = arm.regs[REG_SP] - reglist.count_ones() * 4;
+            if store_lr { sp -= 4; }
+            arm.regs[REG_SP] = sp; // writeback
+
+            for i in 0..8 {
+                if reglist & (1 << i) != 0 {
+                    check_watchpoint!(arm, sp);
+                    ic.write32(sp, arm.regs[i]);
+                    sp += 4;
+                }
+            }
+
+            if store_lr {
+                check_watchpoint!(arm, sp);
+                ic.write32(sp, arm.regs[REG_LR]);
+            }
+        }
+    ),
+    ("1011 110 iiiiiiiii", "POP { Rlist }",
+        |arm, ic, op| {
+            let reglist = op.imm8();
+            let mut sp = arm.regs[REG_SP];
+            let load_pc = op.field::<u16>(8, 1) != 0;
+
+            for i in 0..8 {
+                if reglist & (1 << i) != 0 {
+                    check_watchpoint!(arm, sp);
+                    arm.regs[i] = ic.read32(sp);
+                    sp += 4;
+                }
+            }
+
+            if load_pc {
+                check_watchpoint!(arm, sp);
+                let addr = ic.read32(sp);
+                sp += 4;
+                arm.branch_to(ic, addr & !1);
+            }
+
+            arm.regs[REG_SP] = sp;
+        }
+    ),
+
+    ("1100 0 bbb iiiiiiii", "STMIA Rb!, { Rlist }",
+        |arm, ic, op| {
+            let rlist = op.imm8();
+            let rb_index = op.reg3(8);
+            let mut rb = arm.regs[rb_index];
+
+            for i in 0..8 {
+                if rlist & (1 << i) != 0 {
+                    check_watchpoint!(arm, rb);
+                    ic.write32(rb, arm.regs[i]);
+                    rb += 4;
+                }
+            }
+
+            arm.regs[rb_index] = rb;
+        }
+    ),
+    ("1100 1 bbb iiiiiiii", "LDMIA Rb!, { Rlist }",
+        |arm, ic, op| {
+            let rlist = op.imm8();
+            let rb_index = op.reg3(8);
+            let mut rb = arm.regs[rb_index];
+
+            for i in 0..8 {
+                if rlist & (1 << i) != 0 {
+                    check_watchpoint!(arm, rb);
+                    arm.regs[i] = ic.read32(rb);
+                    rb += 4;
+                }
+            }
+
+            arm.regs[rb_index] = rb;
+        }
+    ),
 ];
