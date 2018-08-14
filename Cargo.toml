@@ -5,6 +5,6 @@ authors = ["Angus Holder <aholder97@gmail.com>"]
 build = "build.rs"
 
 [dependencies]
-bitflags = "0.8.2"
+bitflags = "1.0.3"
 enum_primitive = "0.1.1"
 num = {version = "*", default-features = false}
