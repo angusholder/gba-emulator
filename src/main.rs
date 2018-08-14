@@ -22,16 +22,18 @@ mod dma;
 use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;
 use debugger::Debugger;
+use std::error::Error;
+use std::fs;
 
-const BIOS_BIN: &'static [u8] = include_bytes!("../roms/bios.bin");
-const PACMAN: &'static [u8] = include_bytes!("../roms/Pac-Man Collection.gba");
-
-fn main() {
-    let mut interconnect = Interconnect::new(BIOS_BIN, PACMAN);
+fn main() -> Result<(), Box<Error>> {
+    let bios = fs::read("../roms/bios.bin")?;
+    let rom = fs::read("../roms/Pac-Man Collection.gba")?;
+    let mut interconnect = Interconnect::new(&bios, &rom);
     let mut arm = Arm7TDMI::new();
     arm.signal_reset(&mut interconnect);
 
     let mut debugger = Debugger::new(arm, interconnect);
 
     debugger.run();
+    Ok(())
 }
