@@ -457,4 +457,45 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ldr_imm_offset(arm, ic, op, size_of::<u8>(), Interconnect::read_ext_u8);
         }
     ),
+
+    ("1001 0 ddd iiiiiiii", "STR Rd, [SP, #Imm]",
+        |arm, ic, op| {
+            let rd = arm.regs[op.reg3(8)];
+            let offset = op.imm8() << 2;
+            let addr = arm.regs[REG_SP].wrapping_add(offset);
+            check_watchpoint!(arm, addr);
+            ic.write32(addr, rd);
+        }
+    ),
+    ("1001 1 ddd iiiiiiii", "LDR Rd, [SP, #Imm]",
+        |arm, ic, op| {
+            let offset = op.imm8() << 2;
+            let addr = arm.regs[REG_SP].wrapping_add(offset);
+            check_watchpoint!(arm, addr);
+            arm.regs[op.reg3(8)] = ic.read32(addr);
+            ic.add_internal_cycles(1); // internal cycle for address calculation
+        }
+    ),
+
+    ("1010 0 ddd iiiiiiii", "ADD Rd, PC, #Imm",
+        |arm, _, op| {
+            arm.regs[op.reg3(8)] = arm.regs[REG_PC] + (op.imm8() << 2);
+        }
+    ),
+    ("1010 1 ddd iiiiiiii", "ADD Rd, SP, #Imm",
+        |arm, _, op| {
+            arm.regs[op.reg3(8)] = arm.regs[REG_SP] + (op.imm8() << 2);
+        }
+    ),
+
+    ("1011 0000 0iiiiiii", "ADD SP, #Imm",
+        |arm, _, op| {
+            arm.regs[REG_SP] += op.imm8();
+        }
+    ),
+    ("1011 0000 1iiiiiii", "ADD SP, -#Imm",
+        |arm, _, op| {
+            arm.regs[REG_SP] -= op.imm8() & !0x80;
+        }
+    ),
 ];
