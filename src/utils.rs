@@ -3,6 +3,9 @@ use std::ops::{ Add, AddAssign, Sub, SubAssign };
 use std::fmt;
 use std::slice;
 
+#[allow(unused_imports)]
+use log::LogKind::*;
+
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };
     (u16,   $n:expr) => { $n as u16 };

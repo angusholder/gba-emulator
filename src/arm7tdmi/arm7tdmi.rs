@@ -269,6 +269,7 @@ impl Arm7TDMI {
         self.cpsr.mode = to_mode;
     }
 
+    #[inline(always)]
     pub fn eval_condition_code(&self, code: ConditionCode) -> bool {
         match code {
             ConditionCode::Eq => self.cpsr.z,
@@ -279,12 +280,12 @@ impl Arm7TDMI {
             ConditionCode::Pl => !self.cpsr.n,
             ConditionCode::Vs => self.cpsr.v,
             ConditionCode::Vc => !self.cpsr.v,
-            ConditionCode::Hi => self.cpsr.c && !self.cpsr.z,
-            ConditionCode::Ls => !self.cpsr.c || self.cpsr.z,
+            ConditionCode::Hi => self.cpsr.c & !self.cpsr.z,
+            ConditionCode::Ls => !self.cpsr.c | self.cpsr.z,
             ConditionCode::Ge => self.cpsr.n == self.cpsr.v,
             ConditionCode::Lt => self.cpsr.n != self.cpsr.v,
-            ConditionCode::Gt => !self.cpsr.z && (self.cpsr.n == self.cpsr.v),
-            ConditionCode::Le => self.cpsr.z || (self.cpsr.n != self.cpsr.v),
+            ConditionCode::Gt => !self.cpsr.z & (self.cpsr.n == self.cpsr.v),
+            ConditionCode::Le => self.cpsr.z | (self.cpsr.n != self.cpsr.v),
             ConditionCode::Al => true,
         }
     }

@@ -147,6 +147,34 @@ fn ldr_imm_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, siz
     ic.add_internal_cycles(1); // internal cycle for address calculation
 }
 
+fn branch_cc<COND: cond::Cond>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let offset = (op.imm8() as i8 as u32) << 1;
+    if arm.eval_condition_code(COND::CC) {
+        let addr = arm.regs[REG_PC].wrapping_add(offset);
+        arm.branch_to(ic, addr);
+    }
+}
+
+mod cond {
+    use arm7tdmi::ConditionCode;
+
+    pub trait Cond { const CC: ConditionCode; }
+    pub struct Eq; impl Cond for Eq { const CC: ConditionCode = ConditionCode::Eq; }
+    pub struct Ne; impl Cond for Ne { const CC: ConditionCode = ConditionCode::Ne; }
+    pub struct Cs; impl Cond for Cs { const CC: ConditionCode = ConditionCode::Cs; }
+    pub struct Cc; impl Cond for Cc { const CC: ConditionCode = ConditionCode::Cc; }
+    pub struct Mi; impl Cond for Mi { const CC: ConditionCode = ConditionCode::Mi; }
+    pub struct Pl; impl Cond for Pl { const CC: ConditionCode = ConditionCode::Pl; }
+    pub struct Vs; impl Cond for Vs { const CC: ConditionCode = ConditionCode::Vs; }
+    pub struct Vc; impl Cond for Vc { const CC: ConditionCode = ConditionCode::Vc; }
+    pub struct Hi; impl Cond for Hi { const CC: ConditionCode = ConditionCode::Hi; }
+    pub struct Ls; impl Cond for Ls { const CC: ConditionCode = ConditionCode::Ls; }
+    pub struct Ge; impl Cond for Ge { const CC: ConditionCode = ConditionCode::Ge; }
+    pub struct Lt; impl Cond for Lt { const CC: ConditionCode = ConditionCode::Lt; }
+    pub struct Gt; impl Cond for Gt { const CC: ConditionCode = ConditionCode::Gt; }
+    pub struct Le; impl Cond for Le { const CC: ConditionCode = ConditionCode::Le; }
+}
+
 //bitflags!()
 
 /// Legend:
@@ -580,4 +608,19 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rb_index] = rb;
         }
     ),
+
+    ("1101 0000 iiiiiiii", "BEQ $label", branch_cc::<cond::Eq>),
+    ("1101 0001 iiiiiiii", "BNE $label", branch_cc::<cond::Ne>),
+    ("1101 0010 iiiiiiii", "BCS $label", branch_cc::<cond::Cs>),
+    ("1101 0011 iiiiiiii", "BCC $label", branch_cc::<cond::Cc>),
+    ("1101 0100 iiiiiiii", "BMI $label", branch_cc::<cond::Mi>),
+    ("1101 0101 iiiiiiii", "BPL $label", branch_cc::<cond::Pl>),
+    ("1101 0110 iiiiiiii", "BVS $label", branch_cc::<cond::Vs>),
+    ("1101 0111 iiiiiiii", "BVC $label", branch_cc::<cond::Vc>),
+    ("1101 1000 iiiiiiii", "BHI $label", branch_cc::<cond::Hi>),
+    ("1101 1001 iiiiiiii", "BLS $label", branch_cc::<cond::Ls>),
+    ("1101 1010 iiiiiiii", "BGE $label", branch_cc::<cond::Ge>),
+    ("1101 1011 iiiiiiii", "BLT $label", branch_cc::<cond::Lt>),
+    ("1101 1100 iiiiiiii", "BGT $label", branch_cc::<cond::Gt>),
+    ("1101 1101 iiiiiiii", "BLE $label", branch_cc::<cond::Le>),
 ];
