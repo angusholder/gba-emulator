@@ -1,6 +1,5 @@
 use std::fmt;
 use std::str::FromStr;
-use std::ascii::AsciiExt;
 
 pub use self::LogLevel::{ Trace, Note, Warn, Error };
 pub use self::LogKind::*;
