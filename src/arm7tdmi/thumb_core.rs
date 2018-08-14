@@ -101,10 +101,31 @@ fn alu2_hreg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     f(arm, rs, rd, rd_index);
 }
 
+fn str_reg_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
+    where F: Fn(&mut Interconnect, u32, T)
+{
+    let rd = arm.regs[op.reg3(0)];
+    let rb = arm.regs[op.reg3(3)];
+    let ro = arm.regs[op.reg3(6)];
+    let addr = rb.wrapping_add(ro);
+    check_watchpoint!(arm, addr);
+    f(ic, addr, T::from(rd).unwrap());
+}
+
+fn ldr_reg_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
+    where F: Fn(&mut Interconnect, u32) -> u32
+{
+    let rb = arm.regs[op.reg3(3)];
+    let ro = arm.regs[op.reg3(6)];
+    let addr = rb.wrapping_add(ro);
+    check_watchpoint!(arm, addr);
+    arm.regs[op.reg3(0)] = f(ic, addr);
+}
+
 //bitflags!()
 
 /// Legend:
-/// [isndo] can be anything
+/// [isndob] can be anything
 /// At least one of the bits marked as ^ must be 1
 static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ("000 00 iiiii sss ddd", "LSL rd, rs, #imm5",
@@ -335,6 +356,48 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             check_watchpoint!(arm, addr);
             arm.regs[op.reg3(8)] = ic.read32(addr);
             ic.add_internal_cycles(1); // internal cycle for address calculation
+        }
+    ),
+
+    ("0101 000 ooo bbb ddd", "STR Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            str_reg_offset(arm, ic, op, Interconnect::write32);
+        }
+    ),
+    ("0101 001 ooo bbb ddd", "STRH Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            str_reg_offset(arm, ic, op, Interconnect::write16);
+        }
+    ),
+    ("0101 010 ooo bbb ddd", "STRB Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            str_reg_offset(arm, ic, op, Interconnect::write8);
+        }
+    ),
+
+    ("0101 100 ooo bbb ddd", "LDR Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            ldr_reg_offset(arm, ic, op, Interconnect::read32);
+        }
+    ),
+    ("0101 011 ooo bbb ddd", "LDRH Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u16);
+        }
+    ),
+    ("0101 110 ooo bbb ddd", "LDRB Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u8);
+        }
+    ),
+    ("0101 111 ooo bbb ddd", "LDSH Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i16);
+        }
+    ),
+    ("0101 101 ooo bbb ddd", "LDSB Rd, [Rb, Ro]",
+        |arm, ic, op| {
+            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i8);
         }
     ),
 ];

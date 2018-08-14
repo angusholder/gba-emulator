@@ -334,6 +334,18 @@ impl Interconnect {
         self.cycles += cycle;
         read
     }
+    pub fn read_ext_i8(&mut self, addr: u32) -> u32 {
+        self.read8(addr) as i8 as u32
+    }
+    pub fn read_ext_i16(&mut self, addr: u32) -> u32 {
+        self.read16(addr) as i16 as u32
+    }
+    pub fn read_ext_u8(&mut self, addr: u32) -> u32 {
+        self.read8(addr) as u32
+    }
+    pub fn read_ext_u16(&mut self, addr: u32) -> u32 {
+        self.read16(addr) as u32
+    }
 
     pub fn write8(&mut self, addr: u32, value: u8) {
         let cycle = self.debug_write8(addr, value);
