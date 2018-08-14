@@ -623,4 +623,39 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ("1101 1011 iiiiiiii", "BLT $label", branch_cc::<cond::Lt>),
     ("1101 1100 iiiiiiii", "BGT $label", branch_cc::<cond::Gt>),
     ("1101 1101 iiiiiiii", "BLE $label", branch_cc::<cond::Le>),
+
+    ("1101 1111 iiiiiiii", "SWI #Imm",
+        |arm, ic, _| {
+            arm.signal_swi(ic);
+        }
+    ),
+
+    ("11100 iiiiiiiiiii", "B $label",
+        |arm, ic, op| {
+            let offset = sign_extend(op.field(11, 11), 11) << 1;
+            let addr = arm.regs[REG_PC].wrapping_add(offset);
+            arm.branch_to(ic, addr);
+        }
+    ),
+
+    ("11110 iiiiiiiiiii", "BL $longlabel",
+        |arm, ic, op| {
+            let hi_offset = sign_extend(op.field(11, 11), 11) << 12;
+            arm.regs[REG_LR] = arm.regs[REG_PC].wrapping_add(hi_offset);
+        }
+    ),
+
+    ("11111 iiiiiiiiiii", "BLlow $label",
+        |arm, ic, op| {
+            let lo_offset = op.field::<u32>(11, 11) << 1;
+            arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);
+            let temp = arm.regs[REG_PC];
+            let target = arm.regs[REG_LR];
+            arm.branch_to(interconnect, target);
+
+            // LR contains address of instruction following this,
+            // and has bit0 set to force thumb mode upon return.
+            arm.regs[REG_LR] = (temp - 2) | 1;
+        }
+    ),
 ];
