@@ -238,6 +238,14 @@ impl Arm7TDMI {
         }
     }
 
+    pub fn set_reg(&mut self, ic: &mut Interconnect, index: usize, value: u32) {
+        if index != REG_PC {
+            self.regs[index] = value;
+        } else {
+            self.branch_to(ic, value);
+        }
+    }
+
     pub fn bank_swap(&mut self, mode: OperatingMode) {
         use std::mem;
         fn helper(regs: &mut [u32], lr: &mut u32, sp: &mut u32) {
