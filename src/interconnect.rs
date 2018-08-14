@@ -148,11 +148,11 @@ impl Interconnect {
         flags |= self.renderer.step_cycles(current_cycle - start_cycle, buffer);
         flags |= step_timers(self, current_cycle);
 
-        if flags.contains(LCD_VBLANK) {
+        if flags.contains(IrqFlags::LCD_VBLANK) {
             dma_on_vblank(self);
         }
 
-        if flags.contains(LCD_HBLANK) {
+        if flags.contains(IrqFlags::LCD_HBLANK) {
             dma_on_hblank(self);
         }
 
@@ -841,21 +841,21 @@ impl_io_map! {
 }
 
 bitflags! {
-pub flags IrqFlags: u16 {
-    const LCD_VBLANK = 1 << 0,
-    const LCD_HBLANK = 1 << 1,
-    const LCD_VCOUNTER_MATCH = 1 << 2,
-    const TIMER0_OVERFLOW = 1 << 3,
-    const TIMER1_OVERFLOW = 1 << 4,
-    const TIMER2_OVERFLOW = 1 << 5,
-    const TIMER3_OVERFLOW = 1 << 6,
-    const SERIAL_COMM = 1 << 7,
-    const DMA0 = 1 << 8,
-    const DMA1 = 1 << 9,
-    const DMA2 = 1 << 10,
-    const DMA3 = 1 << 11,
-    const KEYPAD = 1 << 12,
-    const GAME_PAK = 1 << 13,
+pub struct IrqFlags: u16 {
+    const LCD_VBLANK = 1 << 0;
+    const LCD_HBLANK = 1 << 1;
+    const LCD_VCOUNTER_MATCH = 1 << 2;
+    const TIMER0_OVERFLOW = 1 << 3;
+    const TIMER1_OVERFLOW = 1 << 4;
+    const TIMER2_OVERFLOW = 1 << 5;
+    const TIMER3_OVERFLOW = 1 << 6;
+    const SERIAL_COMM = 1 << 7;
+    const DMA0 = 1 << 8;
+    const DMA1 = 1 << 9;
+    const DMA2 = 1 << 10;
+    const DMA3 = 1 << 11;
+    const KEYPAD = 1 << 12;
+    const GAME_PAK = 1 << 13;
 }
 }
 

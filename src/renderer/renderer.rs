@@ -1,5 +1,5 @@
 use utils::{ Buffer, Cycle };
-use interconnect::{ IrqFlags, LCD_VBLANK, LCD_HBLANK, LCD_VCOUNTER_MATCH };
+use interconnect::IrqFlags;
 use log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
 use super::mode0;
@@ -162,7 +162,7 @@ impl Renderer {
                 if self.scanline == VBLANK_START {
                     self.render_line(buffer);
                     if self.vblank_irq_enable {
-                        flags |= LCD_VBLANK;
+                        flags |= IrqFlags::LCD_VBLANK;
                         note!(GPU, "VBlank started with IRQ signal");
                     } else {
                         note!(GPU, "VBlank started");
@@ -174,7 +174,7 @@ impl Renderer {
 
             if self.x == HBLANK_START {
                 if self.hblank_irq_enable {
-                    flags |= LCD_HBLANK;
+                    flags |= IrqFlags::LCD_HBLANK;
                     note!(GPU, "HBlank started with IRQ signal");
                 } else {
                     trace!(GPU, "HBlank started");
@@ -187,7 +187,7 @@ impl Renderer {
 
             if self.scanline == self.vcount_setting && self.vcount_irq_enable {
                 note!(GPU, "VCounter match IRQ signal");
-                flags |= LCD_VCOUNTER_MATCH;
+                flags |= IrqFlags::LCD_VCOUNTER_MATCH;
             }
         }
 

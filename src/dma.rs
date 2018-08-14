@@ -1,6 +1,6 @@
 use num::FromPrimitive;
 
-use interconnect::{ Interconnect, IrqFlags, DMA0, DMA1, DMA2, DMA3 };
+use interconnect::{ Interconnect, IrqFlags };
 use log::*;
 use utils::Latched;
 
@@ -215,10 +215,10 @@ impl Dma {
 
     fn irq_flag(&self) -> IrqFlags {
         match self.unit {
-            Dma0 => DMA0,
-            Dma1 => DMA1,
-            Dma2 => DMA2,
-            Dma3 => DMA3,
+            Dma0 => IrqFlags::DMA0,
+            Dma1 => IrqFlags::DMA1,
+            Dma2 => IrqFlags::DMA2,
+            Dma3 => IrqFlags::DMA3,
         }
     }
 

@@ -3,7 +3,7 @@ use std::fmt;
 use num::FromPrimitive;
 
 use utils::Cycle;
-use interconnect::{ Interconnect, IrqFlags, TIMER0_OVERFLOW, TIMER1_OVERFLOW, TIMER2_OVERFLOW, TIMER3_OVERFLOW };
+use interconnect::{ Interconnect, IrqFlags };
 use log::*;
 
 enum_from_primitive! {
@@ -145,10 +145,10 @@ impl Timer {
 
     fn irq_flag(&self) -> IrqFlags {
         match self.unit {
-            TimerUnit::Tm0 => TIMER0_OVERFLOW,
-            TimerUnit::Tm1 => TIMER1_OVERFLOW,
-            TimerUnit::Tm2 => TIMER2_OVERFLOW,
-            TimerUnit::Tm3 => TIMER3_OVERFLOW,
+            TimerUnit::Tm0 => IrqFlags::TIMER0_OVERFLOW,
+            TimerUnit::Tm1 => IrqFlags::TIMER1_OVERFLOW,
+            TimerUnit::Tm2 => IrqFlags::TIMER2_OVERFLOW,
+            TimerUnit::Tm3 => IrqFlags::TIMER3_OVERFLOW,
         }
     }
 
