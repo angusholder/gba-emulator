@@ -4,12 +4,13 @@ use std::mem::size_of;
 
 use num::NumCast;
 
-use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, ConditionCode, StepEvent };
+use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
 
 pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
     let discr = (op >> 6) as usize;
+    StepEvent::None
 //    THUMB_LUT[discr](arm, interconnect, op)
 }
 
@@ -34,7 +35,7 @@ impl ThumbOp {
     fn hrd(&self) -> usize { self.field::<usize>(0, 3) | (self.field::<usize>(8, 1) << 3) }
 
     fn get_rd(&self) -> &'static str {
-        REG_NAMES[self.field(0, 3)]
+        REG_NAMES[self.field::<usize>(0, 3)]
     }
 
 //    fn get_
@@ -43,7 +44,7 @@ impl ThumbOp {
 type ThumbEmuFn = fn(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ThumbOp);
 
 fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(&mut Arm7TDMI, u32, u32) -> u32
+    where F: FnOnce(&mut Arm7TDMI, u32, u32) -> u32
 {
     let rs = arm.regs[op.reg3(3)];
     let imm = op.imm5(6);
@@ -53,7 +54,7 @@ fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn alu3_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(u32, u32) -> u32
+    where F: FnOnce(u32, u32) -> u32
 {
     let rs = arm.regs[op.reg3(3)];
     let rn = arm.regs[op.reg3(6)];
@@ -64,7 +65,7 @@ fn alu3_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(u32, u32) -> u32
+    where F: FnOnce(u32, u32) -> u32
 {
     let rs = arm.regs[op.reg3(3)];
     let rn = op.imm3(6);
@@ -75,7 +76,7 @@ fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn alu2_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(u32, u32) -> u32
+    where F: FnOnce(u32, u32) -> u32
 {
     let imm = op.imm8();
     let rd_index = op.reg3(8);
@@ -86,7 +87,7 @@ fn alu2_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn alu2_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(&mut Arm7TDMI, u32, u32, usize)
+    where F: FnOnce(&mut Arm7TDMI, u32, u32, usize)
 {
     let rd_index = op.reg3(0);
     let rd = arm.regs[rd_index];
@@ -95,7 +96,7 @@ fn alu2_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn alu2_hreg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: Fn(&mut Arm7TDMI, u32, u32, usize)
+    where F: FnOnce(&mut Arm7TDMI, u32, u32, usize)
 {
     let rs = arm.regs[op.hrs()];
     let rd_index = op.hrd();
@@ -104,7 +105,7 @@ fn alu2_hreg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
 }
 
 fn str_reg_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: Fn(&mut Interconnect, u32, T)
+    where F: FnOnce(&mut Interconnect, u32, T)
 {
     let rd = arm.regs[op.reg3(0)];
     let rb = arm.regs[op.reg3(3)];
@@ -115,7 +116,7 @@ fn str_reg_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: 
 }
 
 fn ldr_reg_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: Fn(&mut Interconnect, u32) -> u32
+    where F: FnOnce(&mut Interconnect, u32) -> u32
 {
     let rb = arm.regs[op.reg3(3)];
     let ro = arm.regs[op.reg3(6)];
@@ -125,7 +126,7 @@ fn ldr_reg_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: 
 }
 
 fn str_imm_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: Fn(&mut Interconnect, u32, T)
+    where F: FnOnce(&mut Interconnect, u32, T)
 {
     let rd = arm.regs[op.reg3(0)];
     let rb = arm.regs[op.reg3(3)];
@@ -136,7 +137,7 @@ fn str_imm_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: 
 }
 
 fn ldr_imm_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, size_of_t: usize, f: F)
-    where F: Fn(&mut Interconnect, u32) -> u32
+    where F: FnOnce(&mut Interconnect, u32) -> u32
 {
     let rb = arm.regs[op.reg3(3)];
     let offset = op.imm5(6) * size_of_t as u32;
@@ -651,7 +652,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);
             let temp = arm.regs[REG_PC];
             let target = arm.regs[REG_LR];
-            arm.branch_to(interconnect, target);
+            arm.branch_to(ic, target);
 
             // LR contains address of instruction following this,
             // and has bit0 set to force thumb mode upon return.
