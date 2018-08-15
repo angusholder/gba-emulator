@@ -91,6 +91,7 @@ impl Background {
     }
 }
 
+#[derive(Clone)]
 pub struct Renderer {
     pub vram: Buffer,
     pub bg_palette: [u32; 256],
@@ -110,12 +111,6 @@ pub struct Renderer {
     vblank_irq_enable: bool,
 
     remaining_cycles: Cycle,
-}
-
-impl Clone for Renderer {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 
 impl Renderer {

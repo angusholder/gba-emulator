@@ -8,6 +8,7 @@ const TILE_SIZE_8BIT: usize = 0x20;
 
 pub type FrameLine = [u32; PHYS_WIDTH];
 
+#[derive(Clone)]
 pub struct FrameBuffer {
     buffer: Box<[u32; PHYS_HEIGHT * PHYS_WIDTH]>,
 }
@@ -23,13 +24,6 @@ impl FrameBuffer {
         &self.buffer[..]
     }
 }
-
-impl Clone for FrameBuffer {
-    fn clone(&self) -> FrameBuffer {
-        *self
-    }
-}
-
 impl Index<usize> for FrameBuffer {
     type Output = FrameLine;
     fn index(&self, index: usize) -> &Self::Output {
