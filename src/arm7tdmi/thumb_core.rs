@@ -1,5 +1,3 @@
-#![allow(unused_variables, private_no_mangle_fns)]
-
 use std::mem::size_of;
 
 use num::NumCast;
@@ -8,8 +6,8 @@ use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
 
-pub fn step_thumb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u16) -> StepEvent {
-    let discr = (op >> 6) as usize;
+pub fn step_thumb(_arm: &mut Arm7TDMI, _interconnect: &mut Interconnect, op: u16) -> StepEvent {
+    let _discr = (op >> 6) as usize;
     StepEvent::None
 //    THUMB_LUT[discr](arm, interconnect, op)
 }
@@ -287,14 +285,14 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ),
 
     ("010000 0000 sss ddd", "AND %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd & rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
     ("010000 0001 sss ddd", "EOR %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd ^ rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
@@ -325,7 +323,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
     ("010000 0101 sss ddd", "ADC %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd.wrapping_add(rs).wrapping_add(arm.cpsr.c as u32);
             set_zn(arm, result);
             add_set_vc(arm, rd, rs);
@@ -333,7 +331,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
     ("010000 0110 sss ddd", "SBC %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rs.wrapping_sub(rs).wrapping_sub(!arm.cpsr.c as u32);
             set_zn(arm, result);
             sub_set_vc(arm, rd, rs);
@@ -349,12 +347,12 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
     ("010000 1000 sss ddd", "TST %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             set_zn(arm, rd & rs);
         })
     ),
     ("010000 1001 sss ddd", "NEG %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, _, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, _, rd_index| {
             let result = (rs as i32).wrapping_neg() as u32;
             set_zn(arm, result);
             sub_set_vc(arm, 0, rs);
@@ -362,21 +360,21 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
     ("010000 1010 sss ddd", "CMP %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             let result = rd.wrapping_sub(rs);
             set_zn(arm, result);
             sub_set_vc(arm, rd, rs);
         })
     ),
     ("010000 1011 sss ddd", "CMN %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             let result = rs.wrapping_add(rd);
             set_zn(arm, result);
             add_set_vc(arm, rd, rs);
         })
     ),
     ("010000 1100 sss ddd", "ORR %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd | rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
@@ -392,14 +390,14 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
     ("010000 1110 sss ddd", "BIC %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd & !rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
     ("010000 1111 sss ddd", "MVN %Rd, %Rs",
-        |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
+        |arm, _, op| alu2_reg(arm, op, |arm, rs, _, rd_index| {
             let result = !rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
@@ -612,7 +610,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ),
 
     ("11110 jjjjjjjjjjj", "BL $longlabel[j]",
-        |arm, ic, op| {
+        |arm, _, op| {
             let hi_offset = sign_extend(op.field(11, 11), 11) << 12;
             arm.regs[REG_LR] = arm.regs[REG_PC].wrapping_add(hi_offset);
         }
