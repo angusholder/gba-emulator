@@ -141,7 +141,7 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
                 }
             }
             '?' => {
-                let caps: Captures = IMM_REGEX.captures(&asm_fmt[index..]).ok_or(err("Immediate was formatted incorrectly"))?;
+                let caps: Captures = FLAG_REGEX.captures(&asm_fmt[index..]).ok_or(err("Immediate was formatted incorrectly"))?;
                 let text = caps.get(1).unwrap().as_str().to_string();
                 let bitfield_name = caps.get(2).unwrap().as_str().chars().next().unwrap();
                 let mask = match bit_fmt.find(bitfield_name) {
