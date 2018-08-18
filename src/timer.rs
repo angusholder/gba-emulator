@@ -123,7 +123,7 @@ pub struct Timer {
 impl Timer {
     pub fn new(unit: TimerUnit) -> Timer {
         Timer {
-            unit: unit,
+            unit,
 
             reload_value: 0,
 

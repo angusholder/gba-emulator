@@ -176,15 +176,15 @@ fn initialize_dma(dma: &mut Dma) {
         source: dma.source.get(),
         dest: dma.dest.get(),
         words_remaining: dma.word_count.get(),
-        dest_step: dest_step,
-        source_step: source_step,
+        dest_step,
+        source_step,
     });
 }
 
 impl Dma {
     pub fn new(unit: DmaUnit) -> Dma {
         Dma {
-            unit: unit,
+            unit,
 
             source: Latched::new(0),
             dest: Latched::new(0),

@@ -215,8 +215,8 @@ pub struct Debugger {
 impl Debugger {
     pub fn new(arm: Arm7TDMI, interconnect: Interconnect) -> Debugger {
         Debugger {
-            arm: arm,
-            interconnect: interconnect,
+            arm,
+            interconnect,
             buffer: FrameBuffer::new(),
             save_states: HashMap::new(),
             temp_breakpoints: HashSet::new(),
