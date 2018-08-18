@@ -2,7 +2,7 @@
 
 use std::cmp;
 
-use num::FromPrimitive;
+use num::{ FromPrimitive, NumCast };
 
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
@@ -16,31 +16,42 @@ pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) ->
     }
 
     let discr = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
-    ARM_LUT[discr as usize](arm, interconnect, op)
+//    ARM_LUT[discr as usize](arm, interconnect, op)
+    StepEvent::None
 }
 
-type ArmOp = fn(&mut Arm7TDMI, &mut Interconnect, u32) -> StepEvent;
+struct ArmOp(u32);
+
+impl ArmOp {
+    fn field(&self, offset: u32, width: u32) -> u32 {
+        let mask = (1 << width) - 1;
+        (self.0 >> offset) & mask
+    }
+
+    fn reg(&self, offset: u32) -> usize { self.field(offset, 4) as usize }
+    fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
+}
 
 fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) -> StepEvent {
     error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
 }
 
-fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: u32) -> StepEvent {
+fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
     arm.signal_undef(interconnect);
     StepEvent::None
 }
 
-fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: u32) -> StepEvent {
+fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
     arm.signal_undef(interconnect);
     StepEvent::None
 }
 
-fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let rm_index = (op & 0xF) as usize;
-    let rd_index = (op >> 12 & 0xF) as usize;
-    let rn_index = (op >> 16 & 0xF) as usize;
+fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    let rm_index = op.reg(0);
+    let rd_index = op.reg(12);
+    let rn_index = op.reg(16);
 
-    assert!(op >> 8 & 0xF == 0);
+    assert!(op.reg(8) == 0);
     assert!(rm_index != REG_PC);
     assert!(rd_index != REG_PC);
     assert!(rn_index != REG_PC);
@@ -57,12 +68,12 @@ fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepE
     StepEvent::None
 }
 
-fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let rm_index = (op & 0xF) as usize;
-    let rd_index = (op >> 12 & 0xF) as usize;
-    let rn_index = (op >> 16 & 0xF) as usize;
+fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    let rm_index = op.reg(0);
+    let rd_index = op.reg(12);
+    let rn_index = op.reg(16);
 
-    assert!(op >> 8 & 0xF == 0);
+    assert!(op.reg(8) == 0);
     assert!(rm_index != REG_PC);
     assert!(rd_index != REG_PC);
     assert!(rn_index != REG_PC);
@@ -79,13 +90,13 @@ fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> Step
     StepEvent::None
 }
 
-fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    if op & 0xF0F0F != 0xF0000 {
+fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    if op.field(0, 12) != 0 || op.field(16, 4) != 0xF {
         return op_und(arm, interconnect, op);
     }
 
-    let rd_index = (op >> 12 & 0xF) as usize;
-    let ps = op & 0x0040_0000 != 0;
+    let rd_index = op.reg(12);
+    let ps = op.flag(22);
 
     debug_assert!(rd_index != REG_PC);
 
@@ -105,17 +116,15 @@ fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> S
     StepEvent::None
 }
 
-fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let flags = match op >> 8 & 0xFFF {
-        0b1001_1111_0000 => false,
-        0b1000_1111_0000 => true,
-        _ => {
-            return op_und(arm, interconnect, op);
-        }
-    };
+fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    if op.field(8, 12) & !0x100 != 0b1000_1111_0000 {
+        return op_und(arm, interconnect, op);
+    }
 
-    let rm_index = (op & 0xF) as usize;
-    let pd = op & 0x0040_0000 != 0;
+    let flags = op.flag(16);
+
+    let rm_index = op.reg(0);
+    let pd = op.flag(22);
 
     debug_assert!(rm_index != REG_PC);
 
@@ -145,14 +154,14 @@ fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> S
     StepEvent::None
 }
 
-fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    if op >> 12 & 0xFF != 0b1000_1111 {
+fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    if op.field(12, 8) != 0b1000_1111 {
         return op_und(arm, interconnect, op);
     }
 
-    let imm = op & 0xFF;
-    let rotate = op >> 8 & 0xF;
-    let pd = op & 0x0040_0000 != 0;
+    let imm = op.field(0, 8);
+    let rotate = op.field(8, 4);
+    let pd = op.flag(22);
 
     let value = imm.rotate_right(rotate);
 
@@ -170,21 +179,20 @@ fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32)
     StepEvent::None
 }
 
-fn op_bx(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    if op & 0xFFF00 != 0xFFF00 {
+fn op_bx(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    if op.field(8, 12) != 0xFFF {
         return op_und(arm, interconnect, op);
     }
 
-    debug_assert!(op >> 8 & 0xFFF == 0xFFF);
-    let rn = arm.regs[(op & 0xF) as usize];
+    let rn = arm.regs[op.reg(0)];
     arm.branch_exchange(interconnect, rn);
 
     StepEvent::None
 }
 
-fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
+fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
     arm.signal_swi(interconnect);
     StepEvent::None
 }
 
-include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
+//include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));

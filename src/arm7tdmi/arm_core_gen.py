@@ -710,7 +710,7 @@ for i in range(1<<12):
         functions[ins_name] = full_fn
 
 def writelines(output):
-    lut_string = f'pub static ARM_LUT: [ArmOp; 4096] = [{", ".join(lut)}];'
+    lut_string = f'pub static ARM_LUT: [fn(&mut Arm7TDMI, &mut Interconnect, u32) -> StepEvent; 4096] = [{", ".join(lut)}];'
     output(lut_string)
 
     for name, fn in sorted(functions.items(), key=lambda it: it[0]):

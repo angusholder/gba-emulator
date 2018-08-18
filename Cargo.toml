@@ -2,7 +2,7 @@
 name = "gba"
 version = "0.1.0"
 authors = ["Angus Holder <aholder97@gmail.com>"]
-build = "build.rs"
+#build = "build.rs"
 
 [dependencies]
 bitflags = "1.0.3"
