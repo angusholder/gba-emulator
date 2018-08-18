@@ -182,51 +182,51 @@ mod cond {
 /// [isndob] can be anything
 /// At least one of the bits marked as ^ must be 1
 static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
-    ("000 00 iiiii sss ddd", "LSL rd, rs, #imm5",
+    ("000 00 iiiii sss ddd", "LSL %Rd, %Rs, #shamt[i]",
         |arm, _, op| {
             shift_imm(arm, op, barrel_shift_lsl_set_flags);
         }
     ),
-    ("000 01 iiiii sss ddd", "LSR rd, rs, #imm5",
+    ("000 01 iiiii sss ddd", "LSR %Rd, %Rs, #shamt[i]",
         |arm, _, op| {
             shift_imm(arm, op, barrel_shift_lsr_set_flags);
         }
     ),
-    ("000 10 iiiii sss ddd", "ASR rd, rs, #imm5",
+    ("000 10 iiiii sss ddd", "ASR %Rd, %Rs, #shamt[i]",
         |arm, _, op| {
             shift_imm(arm, op, barrel_shift_asr_set_flags);
         }
     ),
 
-    ("00011 00 nnn sss ddd", "ADD rd, rs, rn",
+    ("00011 00 nnn sss ddd", "ADD %Rd, %Rs, %Rn",
         |arm, _, op| {
             alu3_reg(arm, op, u32::wrapping_add)
         }
     ),
-    ("00011 01 nnn sss ddd", "SUB rd, rs, rn",
+    ("00011 01 nnn sss ddd", "SUB %Rd, %Rs, %Rn",
         |arm, _, op| {
             alu3_reg(arm, op, u32::wrapping_sub)
         }
     ),
-    ("00011 10 iii sss ddd", "ADD rd, rs, #imm3",
+    ("00011 10 iii sss ddd", "ADD %Rd, %Rs, #imm[i]",
         |arm, _, op| {
             alu3_imm(arm, op, u32::wrapping_add)
         }
     ),
-    ("00011 11 iii sss ddd", "SUB rd, rs, #imm3",
+    ("00011 11 iii sss ddd", "SUB %Rd, %Rs, #imm[i]",
         |arm, _, op| {
             alu3_imm(arm, op, u32::wrapping_sub)
         }
     ),
 
-    ("001 00 ddd iiiiiiii", "MOV rd, #imm8",
+    ("001 00 ddd iiiiiiii", "MOV %Rd, #imm[i]",
         |arm, _, op| {
             let imm = op.imm8();
             set_zn(arm, imm);
             arm.regs[op.reg3(8)] = imm;
         }
     ),
-    ("001 01 ddd iiiiiiii", "CMP rd, #imm8",
+    ("001 01 ddd iiiiiiii", "CMP %Rd, #imm[i]",
         |arm, _, op| {
             let imm = op.imm8();
             let rd: u32 = arm.regs[op.reg3(8)];
@@ -235,7 +235,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             sub_set_vc(arm, rd, imm);
         }
     ),
-    ("001 10 ddd iiiiiiii", "ADD rd, #imm8",
+    ("001 10 ddd iiiiiiii", "ADD %Rd, #imm[i]",
         |arm, _, op| {
             let imm = op.imm8();
             let rd_index = op.reg3(8);
@@ -246,7 +246,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rd_index] = result;
         }
     ),
-    ("001 11 ddd iiiiiiii", "SUB rd, #imm8",
+    ("001 11 ddd iiiiiiii", "SUB %Rd, #imm[i]",
         |arm, _, op| {
             let imm = op.imm8();
             let rd_index = op.reg3(8);
@@ -258,21 +258,21 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("010000 0000 sss ddd", "and rd, rs",
+    ("010000 0000 sss ddd", "AND %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd & rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 0001 sss ddd", "eor rd, rs",
+    ("010000 0001 sss ddd", "EOR %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd ^ rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 0010 sss ddd", "lsl rd, rs",
+    ("010000 0010 sss ddd", "LSL %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = barrel_shift_lsl_set_flags(arm, rd, rs);
             set_zn(arm, result);
@@ -280,7 +280,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ic.add_internal_cycles(1);
         })
     ),
-    ("010000 0011 sss ddd", "lsr rd, rs",
+    ("010000 0011 sss ddd", "LSR %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = barrel_shift_lsr_set_flags(arm, rd, rs);
             set_zn(arm, result);
@@ -288,7 +288,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ic.add_internal_cycles(1);
         })
     ),
-    ("010000 0100 sss ddd", "asr rd, rs",
+    ("010000 0100 sss ddd", "ASR %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = barrel_shift_asr_set_flags(arm, rd, rs);
             set_zn(arm, result);
@@ -296,7 +296,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ic.add_internal_cycles(1);
         })
     ),
-    ("010000 0101 sss ddd", "adc rd, rs",
+    ("010000 0101 sss ddd", "ADC %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd.wrapping_add(rs).wrapping_add(arm.cpsr.c as u32);
             set_zn(arm, result);
@@ -304,7 +304,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 0110 sss ddd", "sbc rd, rs",
+    ("010000 0110 sss ddd", "SBC %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rs.wrapping_sub(rs).wrapping_sub(!arm.cpsr.c as u32);
             set_zn(arm, result);
@@ -312,7 +312,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 0111 sss ddd", "ror rd, rs",
+    ("010000 0111 sss ddd", "ROR %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = barrel_shift_ror_set_flags(arm, rd, rs);
             set_zn(arm, result);
@@ -320,12 +320,12 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ic.add_internal_cycles(1);
         })
     ),
-    ("010000 1000 sss ddd", "tst rd, rs",
+    ("010000 1000 sss ddd", "TST %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             set_zn(arm, rd & rs);
         })
     ),
-    ("010000 1001 sss ddd", "neg rd, rs",
+    ("010000 1001 sss ddd", "NEG %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, _, rd_index| {
             let result = (rs as i32).wrapping_neg() as u32;
             set_zn(arm, result);
@@ -333,28 +333,28 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 1010 sss ddd", "cmp rd, rs",
+    ("010000 1010 sss ddd", "CMP %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             let result = rd.wrapping_sub(rs);
             set_zn(arm, result);
             sub_set_vc(arm, rd, rs);
         })
     ),
-    ("010000 1011 sss ddd", "cmn rd, rs",
+    ("010000 1011 sss ddd", "CMN %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, _| {
             let result = rs.wrapping_add(rd);
             set_zn(arm, result);
             add_set_vc(arm, rd, rs);
         })
     ),
-    ("010000 1100 sss ddd", "orr rd, rs",
+    ("010000 1100 sss ddd", "ORR %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd | rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 1101 sss ddd", "mul rd, rs",
+    ("010000 1101 sss ddd", "MUL %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd.wrapping_mul(rs);
             set_zn(arm, result);
@@ -363,14 +363,14 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 1110 sss ddd", "bic rd, rs",
+    ("010000 1110 sss ddd", "BIC %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd & !rs;
             set_zn(arm, result);
             arm.regs[rd_index] = result;
         })
     ),
-    ("010000 1111 sss ddd", "mvn rd, rs",
+    ("010000 1111 sss ddd", "MVN %Rd, %Rs",
         |arm, ic, op| alu2_reg(arm, op, |arm, rs, rd, rd_index| {
             let result = !rs;
             set_zn(arm, result);
@@ -378,32 +378,32 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         })
     ),
 
-    ("010001 00 ^^ sss ddd", "ADD Hd, Hs",
+    ("010001 00 ^^ sss ddd", "ADD %Hd, %Hs",
         |arm, ic, op| alu2_hreg(arm, op, |arm, rs, rd, rd_index| {
             let result = rd.wrapping_add(rs);
             arm.set_reg(ic, rd_index, result);
         })
     ),
-    ("010001 01 ^^ sss ddd", "CMP Hd, Hs",
+    ("010001 01 ^^ sss ddd", "CMP %Hd, %Hs",
         |arm, _, op| alu2_hreg(arm, op, |arm, rs, rd, _| {
             let result = rd.wrapping_sub(rs);
             set_zn(arm, result);
             sub_set_vc(arm, rd, rs);
         })
     ),
-    ("010001 10 ^^ sss ddd", "MOV Hd, Hs",
+    ("010001 10 ^^ sss ddd", "MOV %Hd, %Hs",
         |arm, ic, op| alu2_hreg(arm, op, |arm, rs, _, rd_index| {
             arm.set_reg(ic, rd_index, rs);
         })
     ),
     // TODO: What does d do for BX?
-    ("010001 11 0 ssss ddd", "BX Hs",
+    ("010001 11 0 ssss ddd", "BX %Hs",
         |arm, ic, op| alu2_hreg(arm, op, |arm, rs, _, _| {
             arm.branch_exchange(ic, rs);
         })
     ),
 
-    ("01001 ddd iiiiiiii", "LDR Rd, [PC, #Imm]",
+    ("01001 ddd iiiiiiii", "LDR %Rd, [PC, #Imm[i]]",
         |arm, ic, op| {
             let offset = op.imm8() << 2;
             let addr = (arm.regs[REG_PC] & !2).wrapping_add(offset);
@@ -413,81 +413,81 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("0101 000 ooo bbb ddd", "STR Rd, [Rb, Ro]",
+    ("0101 000 ooo bbb ddd", "STR %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             str_reg_offset(arm, ic, op, Interconnect::write32);
         }
     ),
-    ("0101 001 ooo bbb ddd", "STRH Rd, [Rb, Ro]",
+    ("0101 001 ooo bbb ddd", "STRH %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             str_reg_offset(arm, ic, op, Interconnect::write16);
         }
     ),
-    ("0101 010 ooo bbb ddd", "STRB Rd, [Rb, Ro]",
+    ("0101 010 ooo bbb ddd", "STRB %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             str_reg_offset(arm, ic, op, Interconnect::write8);
         }
     ),
 
-    ("0101 100 ooo bbb ddd", "LDR Rd, [Rb, Ro]",
+    ("0101 100 ooo bbb ddd", "LDR %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read32);
         }
     ),
-    ("0101 011 ooo bbb ddd", "LDRH Rd, [Rb, Ro]",
+    ("0101 011 ooo bbb ddd", "LDRH %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u16);
         }
     ),
-    ("0101 110 ooo bbb ddd", "LDRB Rd, [Rb, Ro]",
+    ("0101 110 ooo bbb ddd", "LDRB %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u8);
         }
     ),
-    ("0101 111 ooo bbb ddd", "LDSH Rd, [Rb, Ro]",
+    ("0101 111 ooo bbb ddd", "LDSH %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i16);
         }
     ),
-    ("0101 101 ooo bbb ddd", "LDSB Rd, [Rb, Ro]",
+    ("0101 101 ooo bbb ddd", "LDSB %Rd, [%Rb, %Ro]",
         |arm, ic, op| {
             ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i8);
         }
     ),
 
-    ("011 00 iiiii bbb ddd", "STR Rd, [Rb, #Imm]",
+    ("011 00 iiiii bbb ddd", "STR %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             str_imm_offset(arm, ic, op, Interconnect::write32);
         }
     ),
-    ("1000 0 iiiii bbb ddd", "STRH Rd, [Rb, #Imm]",
+    ("1000 0 iiiii bbb ddd", "STRH %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             str_imm_offset(arm, ic, op, Interconnect::write16);
         }
     ),
-    ("011 10 iiiii bbb ddd", "STRB Rd, [Rb, #Imm]",
+    ("011 10 iiiii bbb ddd", "STRB %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             str_imm_offset(arm, ic, op, Interconnect::write8);
         }
     ),
 
-    ("011 01 iiiii bbb ddd", "LDR Rd, [Rb, #Imm]",
+    ("011 01 iiiii bbb ddd", "LDR %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             ldr_imm_offset(arm, ic, op, size_of::<u32>(), Interconnect::read32);
         }
     ),
-    ("1000 1 iiiii bbb ddd", "LDRH Rd, [Rb, #Imm]",
+    ("1000 1 iiiii bbb ddd", "LDRH %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             ldr_imm_offset(arm, ic, op, size_of::<u16>(), Interconnect::read_ext_u16);
         }
     ),
-    ("011 11 iiiii bbb ddd", "LDRB Rd, [Rb, #Imm]",
+    ("011 11 iiiii bbb ddd", "LDRB %Rd, [%Rb, #offset[i]]",
         |arm, ic, op| {
             ldr_imm_offset(arm, ic, op, size_of::<u8>(), Interconnect::read_ext_u8);
         }
     ),
 
-    ("1001 0 ddd iiiiiiii", "STR Rd, [SP, #Imm]",
+    ("1001 0 ddd iiiiiiii", "STR %Rd, [SP, #offset[i]]",
         |arm, ic, op| {
             let rd = arm.regs[op.reg3(8)];
             let offset = op.imm8() << 2;
@@ -496,7 +496,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             ic.write32(addr, rd);
         }
     ),
-    ("1001 1 ddd iiiiiiii", "LDR Rd, [SP, #Imm]",
+    ("1001 1 ddd iiiiiiii", "LDR %Rd, [SP, #offset[i]]",
         |arm, ic, op| {
             let offset = op.imm8() << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
@@ -506,29 +506,29 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("1010 0 ddd iiiiiiii", "ADD Rd, PC, #Imm",
+    ("1010 0 ddd iiiiiiii", "ADD %Rd, PC, #offset[i]",
         |arm, _, op| {
             arm.regs[op.reg3(8)] = arm.regs[REG_PC] + (op.imm8() << 2);
         }
     ),
-    ("1010 1 ddd iiiiiiii", "ADD Rd, SP, #Imm",
+    ("1010 1 ddd iiiiiiii", "ADD %Rd, SP, #offset[i]",
         |arm, _, op| {
             arm.regs[op.reg3(8)] = arm.regs[REG_SP] + (op.imm8() << 2);
         }
     ),
 
-    ("1011 0000 0iiiiiii", "ADD SP, #Imm",
+    ("1011 0000 0iiiiiii", "ADD SP, #imm[i]",
         |arm, _, op| {
             arm.regs[REG_SP] += op.imm8();
         }
     ),
-    ("1011 0000 1iiiiiii", "ADD SP, -#Imm",
+    ("1011 0000 1iiiiiii", "ADD SP, -#imm[i]",
         |arm, _, op| {
             arm.regs[REG_SP] -= op.imm8() & !0x80;
         }
     ),
 
-    ("1011 010 iiiiiiiii", "PUSH { Rlist }",
+    ("1011 010 lllllllll", "PUSH { %+Ul }",
         |arm, ic, op| {
             let reglist = op.imm8();
             let store_lr = op.field::<u16>(8, 1) != 0;
@@ -550,7 +550,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             }
         }
     ),
-    ("1011 110 iiiiiiiii", "POP { Rlist }",
+    ("1011 110 lllllllll", "POP { %+Ol }",
         |arm, ic, op| {
             let reglist = op.imm8();
             let mut sp = arm.regs[REG_SP];
@@ -575,7 +575,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("1100 0 bbb iiiiiiii", "STMIA Rb!, { Rlist }",
+    ("1100 0 bbb llllllll", "STMIA %Rb!, { %+Ll }",
         |arm, ic, op| {
             let rlist = op.imm8();
             let rb_index = op.reg3(8);
@@ -592,7 +592,7 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             arm.regs[rb_index] = rb;
         }
     ),
-    ("1100 1 bbb iiiiiiii", "LDMIA Rb!, { Rlist }",
+    ("1100 1 bbb llllllll", "LDMIA %Rb!, { %+Ll }",
         |arm, ic, op| {
             let rlist = op.imm8();
             let rb_index = op.reg3(8);
@@ -610,28 +610,28 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("1101 0000 iiiiiiii", "BEQ $label", branch_cc::<cond::Eq>),
-    ("1101 0001 iiiiiiii", "BNE $label", branch_cc::<cond::Ne>),
-    ("1101 0010 iiiiiiii", "BCS $label", branch_cc::<cond::Cs>),
-    ("1101 0011 iiiiiiii", "BCC $label", branch_cc::<cond::Cc>),
-    ("1101 0100 iiiiiiii", "BMI $label", branch_cc::<cond::Mi>),
-    ("1101 0101 iiiiiiii", "BPL $label", branch_cc::<cond::Pl>),
-    ("1101 0110 iiiiiiii", "BVS $label", branch_cc::<cond::Vs>),
-    ("1101 0111 iiiiiiii", "BVC $label", branch_cc::<cond::Vc>),
-    ("1101 1000 iiiiiiii", "BHI $label", branch_cc::<cond::Hi>),
-    ("1101 1001 iiiiiiii", "BLS $label", branch_cc::<cond::Ls>),
-    ("1101 1010 iiiiiiii", "BGE $label", branch_cc::<cond::Ge>),
-    ("1101 1011 iiiiiiii", "BLT $label", branch_cc::<cond::Lt>),
-    ("1101 1100 iiiiiiii", "BGT $label", branch_cc::<cond::Gt>),
-    ("1101 1101 iiiiiiii", "BLE $label", branch_cc::<cond::Le>),
+    ("1101 0000 jjjjjjjj", "BEQ $label[j]", branch_cc::<cond::Eq>),
+    ("1101 0001 jjjjjjjj", "BNE $label[j]", branch_cc::<cond::Ne>),
+    ("1101 0010 jjjjjjjj", "BCS $label[j]", branch_cc::<cond::Cs>),
+    ("1101 0011 jjjjjjjj", "BCC $label[j]", branch_cc::<cond::Cc>),
+    ("1101 0100 jjjjjjjj", "BMI $label[j]", branch_cc::<cond::Mi>),
+    ("1101 0101 jjjjjjjj", "BPL $label[j]", branch_cc::<cond::Pl>),
+    ("1101 0110 jjjjjjjj", "BVS $label[j]", branch_cc::<cond::Vs>),
+    ("1101 0111 jjjjjjjj", "BVC $label[j]", branch_cc::<cond::Vc>),
+    ("1101 1000 jjjjjjjj", "BHI $label[j]", branch_cc::<cond::Hi>),
+    ("1101 1001 jjjjjjjj", "BLS $label[j]", branch_cc::<cond::Ls>),
+    ("1101 1010 jjjjjjjj", "BGE $label[j]", branch_cc::<cond::Ge>),
+    ("1101 1011 jjjjjjjj", "BLT $label[j]", branch_cc::<cond::Lt>),
+    ("1101 1100 jjjjjjjj", "BGT $label[j]", branch_cc::<cond::Gt>),
+    ("1101 1101 jjjjjjjj", "BLE $label[j]", branch_cc::<cond::Le>),
 
-    ("1101 1111 iiiiiiii", "SWI #Imm",
+    ("1101 1111 iiiiiiii", "SWI #[i]",
         |arm, ic, _| {
             arm.signal_swi(ic);
         }
     ),
 
-    ("11100 iiiiiiiiiii", "B $label",
+    ("11100 jjjjjjjjjjj", "B $label[j]",
         |arm, ic, op| {
             let offset = sign_extend(op.field(11, 11), 11) << 1;
             let addr = arm.regs[REG_PC].wrapping_add(offset);
@@ -639,14 +639,14 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("11110 iiiiiiiiiii", "BL $longlabel",
+    ("11110 jjjjjjjjjjj", "BL $longlabel[j]",
         |arm, ic, op| {
             let hi_offset = sign_extend(op.field(11, 11), 11) << 12;
             arm.regs[REG_LR] = arm.regs[REG_PC].wrapping_add(hi_offset);
         }
     ),
 
-    ("11111 iiiiiiiiiii", "BLlow $label",
+    ("11111 jjjjjjjjjjj", "BLlow $label[j]",
         |arm, ic, op| {
             let lo_offset = op.field::<u32>(11, 11) << 1;
             arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);

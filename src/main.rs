@@ -5,6 +5,10 @@ extern crate num;
 extern crate enum_primitive;
 #[macro_use]
 extern crate bitflags;
+extern crate bitintr;
+extern crate regex;
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 mod log;
