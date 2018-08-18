@@ -35,8 +35,6 @@ impl ThumbOp {
     fn get_rd(&self) -> &'static str {
         REG_NAMES[self.field::<usize>(0, 3)]
     }
-
-//    fn get_
 }
 
 type ThumbEmuFn = fn(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ThumbOp);
@@ -71,17 +69,6 @@ fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     set_zn(arm, result);
     add_set_vc(arm, rs, rn);
     arm.regs[op.reg3(0)] = result;
-}
-
-fn alu2_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: FnOnce(u32, u32) -> u32
-{
-    let imm = op.imm8();
-    let rd_index = op.reg3(8);
-    let rd = arm.regs[rd_index];
-    let result = f(rd, imm);
-    set_zn(arm, result);
-    arm.regs[rd_index] = result;
 }
 
 fn alu2_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
@@ -201,8 +188,6 @@ mod store {
     impl Store for u16 { const STORE: StoreFn<Self> = Interconnect::write16; }
     impl Store for u32 { const STORE: StoreFn<Self> = Interconnect::write32; }
 }
-
-//bitflags!()
 
 /// Legend:
 /// [isndob] can be anything
