@@ -104,46 +104,42 @@ fn alu2_hreg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     f(arm, rs, rd, rd_index);
 }
 
-fn str_reg_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: FnOnce(&mut Interconnect, u32, T)
+fn str_reg_offset<S: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp)
 {
     let rd = arm.regs[op.reg3(0)];
     let rb = arm.regs[op.reg3(3)];
     let ro = arm.regs[op.reg3(6)];
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
-    f(ic, addr, T::from(rd).unwrap());
+    S::STORE(ic, addr, S::from(rd).unwrap());
 }
 
-fn ldr_reg_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: FnOnce(&mut Interconnect, u32) -> u32
+fn ldr_reg_offset<L: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp)
 {
     let rb = arm.regs[op.reg3(3)];
     let ro = arm.regs[op.reg3(6)];
     let addr = rb.wrapping_add(ro);
     check_watchpoint!(arm, addr);
-    arm.regs[op.reg3(0)] = f(ic, addr);
+    arm.regs[op.reg3(0)] = L::LOAD(ic, addr);
 }
 
-fn str_imm_offset<T: NumCast, F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, f: F)
-    where F: FnOnce(&mut Interconnect, u32, T)
+fn str_imm_offset<S: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp)
 {
     let rd = arm.regs[op.reg3(0)];
     let rb = arm.regs[op.reg3(3)];
-    let offset = op.imm5(6) * size_of::<T>() as u32;
+    let offset = op.imm5(6) * size_of::<S>() as u32;
     let addr = rb.wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    f(ic, addr, T::from(rd).unwrap());
+    S::STORE(ic, addr, S::from(rd).unwrap());
 }
 
-fn ldr_imm_offset<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp, size_of_t: usize, f: F)
-    where F: FnOnce(&mut Interconnect, u32) -> u32
+fn ldr_imm_offset<L: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp)
 {
     let rb = arm.regs[op.reg3(3)];
-    let offset = op.imm5(6) * size_of_t as u32;
+    let offset = op.imm5(6) * size_of::<L>() as u32;
     let addr = rb.wrapping_add(offset);
     check_watchpoint!(arm, addr);
-    arm.regs[op.reg3(0)] = f(ic, addr);
+    arm.regs[op.reg3(0)] = L::LOAD(ic, addr);
     // TODO: The instruction cycle times for the THUMB instruction are identical to that of the equivalent ARM instruction. For more information on instruction cycle times, please refer to Chapter 10, Instruction Cycle Operations.
     ic.add_internal_cycles(1); // internal cycle for address calculation
 }
@@ -174,6 +170,38 @@ mod cond {
     pub struct Lt; impl Cond for Lt { const CC: ConditionCode = ConditionCode::Lt; }
     pub struct Gt; impl Cond for Gt { const CC: ConditionCode = ConditionCode::Gt; }
     pub struct Le; impl Cond for Le { const CC: ConditionCode = ConditionCode::Le; }
+}
+
+mod load {
+    use interconnect::Interconnect;
+    use num::NumCast;
+
+    type LoadFn = fn(&mut Interconnect, u32) -> u32;
+
+    pub trait Load: NumCast {
+        const LOAD: LoadFn;
+    }
+
+    impl Load for u8  { const LOAD: LoadFn = Interconnect::read_ext_u8; }
+    impl Load for i8  { const LOAD: LoadFn = Interconnect::read_ext_i8; }
+    impl Load for u16 { const LOAD: LoadFn = Interconnect::read_ext_u16; }
+    impl Load for i16 { const LOAD: LoadFn = Interconnect::read_ext_i16; }
+    impl Load for u32 { const LOAD: LoadFn = Interconnect::read32; }
+}
+
+mod store {
+    use interconnect::Interconnect;
+    use num::NumCast;
+
+    type StoreFn<T> = fn(&mut Interconnect, u32, T);
+
+    pub trait Store: NumCast {
+        const STORE: StoreFn<Self>;
+    }
+
+    impl Store for u8  { const STORE: StoreFn<Self> = Interconnect::write8; }
+    impl Store for u16 { const STORE: StoreFn<Self> = Interconnect::write16; }
+    impl Store for u32 { const STORE: StoreFn<Self> = Interconnect::write32; }
 }
 
 //bitflags!()
@@ -413,79 +441,23 @@ static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("0101 000 ooo bbb ddd", "STR %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            str_reg_offset(arm, ic, op, Interconnect::write32);
-        }
-    ),
-    ("0101 001 ooo bbb ddd", "STRH %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            str_reg_offset(arm, ic, op, Interconnect::write16);
-        }
-    ),
-    ("0101 010 ooo bbb ddd", "STRB %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            str_reg_offset(arm, ic, op, Interconnect::write8);
-        }
-    ),
+    ("0101 000 ooo bbb ddd", "STR %Rd, [%Rb, %Ro]",  str_reg_offset::<u32>),
+    ("0101 001 ooo bbb ddd", "STRH %Rd, [%Rb, %Ro]", str_reg_offset::<u16>),
+    ("0101 010 ooo bbb ddd", "STRB %Rd, [%Rb, %Ro]", str_reg_offset::<u8>),
 
-    ("0101 100 ooo bbb ddd", "LDR %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            ldr_reg_offset(arm, ic, op, Interconnect::read32);
-        }
-    ),
-    ("0101 011 ooo bbb ddd", "LDRH %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u16);
-        }
-    ),
-    ("0101 110 ooo bbb ddd", "LDRB %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_u8);
-        }
-    ),
-    ("0101 111 ooo bbb ddd", "LDSH %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i16);
-        }
-    ),
-    ("0101 101 ooo bbb ddd", "LDSB %Rd, [%Rb, %Ro]",
-        |arm, ic, op| {
-            ldr_reg_offset(arm, ic, op, Interconnect::read_ext_i8);
-        }
-    ),
+    ("0101 100 ooo bbb ddd", "LDR %Rd, [%Rb, %Ro]",  ldr_reg_offset::<u32>),
+    ("0101 011 ooo bbb ddd", "LDRH %Rd, [%Rb, %Ro]", ldr_reg_offset::<u16>),
+    ("0101 110 ooo bbb ddd", "LDRB %Rd, [%Rb, %Ro]", ldr_reg_offset::<u8>),
+    ("0101 111 ooo bbb ddd", "LDSH %Rd, [%Rb, %Ro]", ldr_reg_offset::<i16>),
+    ("0101 101 ooo bbb ddd", "LDSB %Rd, [%Rb, %Ro]", ldr_reg_offset::<i8>),
 
-    ("011 00 iiiii bbb ddd", "STR %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            str_imm_offset(arm, ic, op, Interconnect::write32);
-        }
-    ),
-    ("1000 0 iiiii bbb ddd", "STRH %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            str_imm_offset(arm, ic, op, Interconnect::write16);
-        }
-    ),
-    ("011 10 iiiii bbb ddd", "STRB %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            str_imm_offset(arm, ic, op, Interconnect::write8);
-        }
-    ),
+    ("011 00 iiiii bbb ddd", "STR %Rd, [%Rb, #offset[i]]",  str_imm_offset::<u32>),
+    ("1000 0 iiiii bbb ddd", "STRH %Rd, [%Rb, #offset[i]]", str_imm_offset::<u16>),
+    ("011 10 iiiii bbb ddd", "STRB %Rd, [%Rb, #offset[i]]", str_imm_offset::<u8>),
 
-    ("011 01 iiiii bbb ddd", "LDR %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            ldr_imm_offset(arm, ic, op, size_of::<u32>(), Interconnect::read32);
-        }
-    ),
-    ("1000 1 iiiii bbb ddd", "LDRH %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            ldr_imm_offset(arm, ic, op, size_of::<u16>(), Interconnect::read_ext_u16);
-        }
-    ),
-    ("011 11 iiiii bbb ddd", "LDRB %Rd, [%Rb, #offset[i]]",
-        |arm, ic, op| {
-            ldr_imm_offset(arm, ic, op, size_of::<u8>(), Interconnect::read_ext_u8);
-        }
-    ),
+    ("011 01 iiiii bbb ddd", "LDR %Rd, [%Rb, #offset[i]]",  ldr_imm_offset::<u32>),
+    ("1000 1 iiiii bbb ddd", "LDRH %Rd, [%Rb, #offset[i]]", ldr_imm_offset::<u16>),
+    ("011 11 iiiii bbb ddd", "LDRB %Rd, [%Rb, #offset[i]]", ldr_imm_offset::<u8>),
 
     ("1001 0 ddd iiiiiiii", "STR %Rd, [SP, #offset[i]]",
         |arm, ic, op| {
