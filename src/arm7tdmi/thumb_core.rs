@@ -137,58 +137,6 @@ fn branch_cc<COND: cond::Cond>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: Th
     }
 }
 
-mod cond {
-    use arm7tdmi::ConditionCode;
-
-    pub trait Cond { const CC: ConditionCode; }
-    pub struct Eq; impl Cond for Eq { const CC: ConditionCode = ConditionCode::Eq; }
-    pub struct Ne; impl Cond for Ne { const CC: ConditionCode = ConditionCode::Ne; }
-    pub struct Cs; impl Cond for Cs { const CC: ConditionCode = ConditionCode::Cs; }
-    pub struct Cc; impl Cond for Cc { const CC: ConditionCode = ConditionCode::Cc; }
-    pub struct Mi; impl Cond for Mi { const CC: ConditionCode = ConditionCode::Mi; }
-    pub struct Pl; impl Cond for Pl { const CC: ConditionCode = ConditionCode::Pl; }
-    pub struct Vs; impl Cond for Vs { const CC: ConditionCode = ConditionCode::Vs; }
-    pub struct Vc; impl Cond for Vc { const CC: ConditionCode = ConditionCode::Vc; }
-    pub struct Hi; impl Cond for Hi { const CC: ConditionCode = ConditionCode::Hi; }
-    pub struct Ls; impl Cond for Ls { const CC: ConditionCode = ConditionCode::Ls; }
-    pub struct Ge; impl Cond for Ge { const CC: ConditionCode = ConditionCode::Ge; }
-    pub struct Lt; impl Cond for Lt { const CC: ConditionCode = ConditionCode::Lt; }
-    pub struct Gt; impl Cond for Gt { const CC: ConditionCode = ConditionCode::Gt; }
-    pub struct Le; impl Cond for Le { const CC: ConditionCode = ConditionCode::Le; }
-}
-
-mod load {
-    use interconnect::Interconnect;
-    use num::NumCast;
-
-    type LoadFn = fn(&mut Interconnect, u32) -> u32;
-
-    pub trait Load: NumCast {
-        const LOAD: LoadFn;
-    }
-
-    impl Load for u8  { const LOAD: LoadFn = Interconnect::read_ext_u8; }
-    impl Load for i8  { const LOAD: LoadFn = Interconnect::read_ext_i8; }
-    impl Load for u16 { const LOAD: LoadFn = Interconnect::read_ext_u16; }
-    impl Load for i16 { const LOAD: LoadFn = Interconnect::read_ext_i16; }
-    impl Load for u32 { const LOAD: LoadFn = Interconnect::read32; }
-}
-
-mod store {
-    use interconnect::Interconnect;
-    use num::NumCast;
-
-    type StoreFn<T> = fn(&mut Interconnect, u32, T);
-
-    pub trait Store: NumCast {
-        const STORE: StoreFn<Self>;
-    }
-
-    impl Store for u8  { const STORE: StoreFn<Self> = Interconnect::write8; }
-    impl Store for u16 { const STORE: StoreFn<Self> = Interconnect::write16; }
-    impl Store for u32 { const STORE: StoreFn<Self> = Interconnect::write32; }
-}
-
 /// Legend:
 /// [isndob] can be anything
 /// At least one of the bits marked as ^ must be 1

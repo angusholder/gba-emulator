@@ -436,7 +436,7 @@ fn get_rotated_immediate(op: ArmOp) -> u32 {
     imm.rotate_right(rotate * 2)
 }
 
-fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) -> u32 {
+fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, setcc: bool) -> u32 {
     const LSL: u32 = 0b00;
     const LSR: u32 = 0b01;
     const ASR: u32 = 0b10;
@@ -445,7 +445,6 @@ fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) ->
     let rm_index = op.reg(0);
     let shift_by_reg = op.flag(4);
     let shift_type = op.field(5, 2);
-    let setcc = op.flag(20);
 
     let rm = arm.regs[rm_index];
     let shift_amount = if shift_by_reg {
@@ -497,7 +496,7 @@ fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let op2 = if imm {
         get_rotated_immediate(op)
     } else {
-        get_shifted_register(arm, ic, op)
+        get_shifted_register(arm, ic, op, setcc)
     };
 
     let result = match opcode {
@@ -546,6 +545,74 @@ fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
         _ => {
             arm.set_reg(ic, rd_index, result);
         }
+    }
+}
+
+fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rd_index = op.reg(12);
+    let rn_index = op.reg(16);
+    let writeback = op.flag(21);
+    let up = op.flag(23);
+    let preindex = op.flag(24);
+    let imm = op.flag(25);
+
+    let rn = arm.regs[rn_index];
+
+    let mut offset = if imm {
+        op.field(0, 12)
+    } else {
+        get_shifted_register(arm, ic, op, false)
+    };
+
+    if !up {
+        offset = ((offset) as i32).wrapping_neg() as u32;
+    }
+
+    let addr = if preindex { rn.wrapping_add(offset) } else { rn };
+
+    check_watchpoint!(arm, addr);
+
+    ic.add_internal_cycles(1);
+    let value = T::LOAD(ic, addr);
+    arm.set_reg(ic, rd_index, value);
+
+    if writeback {
+        // TODO: Handle PC?
+        arm.regs[rn_index] += offset;
+    }
+}
+
+fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rd_index = op.reg(12);
+    let rn_index = op.reg(16);
+    let writeback = op.flag(21);
+    let up = op.flag(23);
+    let preindex = op.flag(24);
+    let imm = op.flag(25);
+
+    let rn = arm.regs[rn_index];
+    let rd = arm.regs[rd_index];
+
+    let mut offset = if imm {
+        op.field(0, 12)
+    } else {
+        get_shifted_register(arm, ic, op, false)
+    };
+
+    if !up {
+        offset = ((offset) as i32).wrapping_neg() as u32;
+    }
+
+    let addr = if preindex { rn.wrapping_add(offset) } else { rn };
+
+    check_watchpoint!(arm, addr);
+
+    ic.add_internal_cycles(1);
+    let value = T::STORE(ic, addr, rd);
+
+    if writeback {
+        // TODO: Handle PC?
+        arm.regs[rn_index] += offset;
     }
 }
 
@@ -603,22 +670,33 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
 
     ("1111 iiii iiii iiii iiii iiii iiii", "SWI* #[i]", op_swi),
 
-    ("00I 0000 S nnnn dddd 2222 2222 2222", "AND<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0001 S nnnn dddd 2222 2222 2222", "EOR<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0010 S nnnn dddd 2222 2222 2222", "SUB<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0011 S nnnn dddd 2222 2222 2222", "RSB<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0100 S nnnn dddd 2222 2222 2222", "ADD<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0101 S nnnn dddd 2222 2222 2222", "ADC<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0110 S nnnn dddd 2222 2222 2222", "SBC<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 0111 S nnnn dddd 2222 2222 2222", "RSC<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1000 1 nnnn dddd 2222 2222 2222", "TST* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1001 1 nnnn dddd 2222 2222 2222", "TEQ* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1010 1 nnnn dddd 2222 2222 2222", "CMP* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1011 1 nnnn dddd 2222 2222 2222", "CMN* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1100 S nnnn dddd 2222 2222 2222", "ORR<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1101 S nnnn dddd 2222 2222 2222", "MOV<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1110 S nnnn dddd 2222 2222 2222", "BIC<S>* %Rd, %Rn, <op2>", data_processing),
-    ("00I 1111 S nnnn dddd 2222 2222 2222", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
+    // At least one of the 'v's must be 0.
+    ("00I 0000 S nnnn dddd iiii viiv iiii", "AND<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0001 S nnnn dddd iiii viiv iiii", "EOR<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0010 S nnnn dddd iiii viiv iiii", "SUB<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0011 S nnnn dddd iiii viiv iiii", "RSB<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0100 S nnnn dddd iiii viiv iiii", "ADD<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0101 S nnnn dddd iiii viiv iiii", "ADC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0110 S nnnn dddd iiii viiv iiii", "SBC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0111 S nnnn dddd iiii viiv iiii", "RSC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1000 1 nnnn dddd iiii viiv iiii", "TST* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1001 1 nnnn dddd iiii viiv iiii", "TEQ* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1010 1 nnnn dddd iiii viiv iiii", "CMP* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1011 1 nnnn dddd iiii viiv iiii", "CMN* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1100 S nnnn dddd iiii viiv iiii", "ORR<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1101 S nnnn dddd iiii viiv iiii", "MOV<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1110 S nnnn dddd iiii viiv iiii", "BIC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1111 S nnnn dddd iiii viiv iiii", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
+
+    ("011P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, #offset[i]]", single_data_load::<u32>),
+    ("010P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, <op2_reg>]", single_data_load::<u32>),
+    ("011P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, #offset[i]]", single_data_load::<u8>),
+    ("010P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, <op2_reg>]", single_data_load::<u8>),
+
+    ("011P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, #offset[i]]", single_data_store::<u32>),
+    ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", single_data_store::<u32>),
+    ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
+    ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
 ];
 
 //include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
