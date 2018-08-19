@@ -761,13 +761,13 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
     ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
 
-    ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH %Rd, [%Rn, %Rm]", sh_data_load::<u16>),
-    ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB %Rd, [%Rn, %Rm]", sh_data_load::<i8>),
-    ("000P U0W1 nnnn dddd 0000 1111 mmmm", "LDRSH %Rd, [%Rn, %Rm]", sh_data_load::<i16>),
-    ("000P U0W0 nnnn dddd 0000 1011 mmmm", "STRH %Rd, [%Rn, %Rm]", half_data_store),
+    ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH* %Rd, [%Rn, %Rm]", sh_data_load::<u16>),
+    ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB* %Rd, [%Rn, %Rm]", sh_data_load::<i8>),
+    ("000P U0W1 nnnn dddd 0000 1111 mmmm", "LDRSH* %Rd, [%Rn, %Rm]", sh_data_load::<i16>),
+    ("000P U0W0 nnnn dddd 0000 1011 mmmm", "STRH* %Rd, [%Rn, %Rm]", half_data_store),
 
-    ("000P U1W1 nnnn dddd iiii 1011 iiii", "LDRH %Rd, [%Rn, #[i]]", sh_data_load::<u16>),
-    ("000P U1W1 nnnn dddd iiii 1101 iiii", "LDRSB %Rd, [%Rn, #[i]]", sh_data_load::<i8>),
-    ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH %Rd, [%Rn, #[i]]", sh_data_load::<i16>),
-    ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH %Rd, [%Rn, #[i]]", half_data_store),
+    ("000P U1W1 nnnn dddd iiii 1011 iiii", "LDRH* %Rd, [%Rn, #[i]]", sh_data_load::<u16>),
+    ("000P U1W1 nnnn dddd iiii 1101 iiii", "LDRSB* %Rd, [%Rn, #[i]]", sh_data_load::<i8>),
+    ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH* %Rd, [%Rn, #[i]]", sh_data_load::<i16>),
+    ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH* %Rd, [%Rn, #[i]]", half_data_store),
 ];
