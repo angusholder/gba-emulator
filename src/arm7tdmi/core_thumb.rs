@@ -71,7 +71,7 @@ fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     arm.regs[op.reg3(0)] = result;
 }
 
-fn alu2_reg<T: alu2::Op>(arm: &mut Arm7TDMI, _: &mut Interconnect, op: ThumbOp) {
+fn alu2_reg<T: alu2::Op>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
     let rd_index = op.reg3(0);
     let rd = arm.regs[rd_index];
     let rs = arm.regs[op.reg3(3)];
@@ -94,7 +94,7 @@ fn alu2_reg<T: alu2::Op>(arm: &mut Arm7TDMI, _: &mut Interconnect, op: ThumbOp) 
             arm.regs[rd_index] = result;
             ic.add_internal_cycles(1);
         }
-        alu2::LS => {
+        alu2::LSR => {
             let result = barrel_shift_lsr_set_flags(arm, rd, rs);
             set_zn(arm, result);
             arm.regs[rd_index] = result;
