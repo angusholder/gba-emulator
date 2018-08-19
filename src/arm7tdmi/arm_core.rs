@@ -203,10 +203,10 @@ fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let rs = arm.regs[rs_index];
     let rm = arm.regs[rm_index];
 
-    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as _);
+    ic.add_internal_cycles((rs.leading_zeros() / 8) as _);
 
     let result = if acc {
-        interconnect.add_internal_cycles(1);
+        ic.add_internal_cycles(1);
         rm.wrapping_mul(rs).wrapping_add(rn)
     } else {
         rm.wrapping_mul(rs)
@@ -284,6 +284,140 @@ fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     }
 }
 
+fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, f: F)
+    where F: Fn(&mut Arm7TDMI, &mut Interconnect, u16, u32) -> u32
+{
+    let rn_index = op.reg(16);
+//    let load = op.flag(20);
+    let writeback = op.flag(21);
+    let set_cc = op.flag(22);
+//    let up = op.flag(23);
+//    let preindex = op.flag(24);
+    let reglist = op.field(0, 16);
+
+    if set_cc {
+        unimplemented!("block data transfer set_cc");
+    }
+
+    let mut addr = arm.regs[rn_index];
+
+    f(arm, ic, addr);
+
+    if writeback {
+        assert!(rn_index != REG_PC);
+        arm.regs[rn_index] = addr;
+    }
+}
+
+fn ldmia(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    for i in 0usize..16 { // Post-increment
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            let value = ic.read32(addr);
+            arm.set_reg(ic, i, value);
+            addr += 4;
+        }
+    }
+    addr
+}
+
+fn ldmib(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            addr += 4;
+            check_watchpoint!(arm, addr);
+            let value = ic.read32(addr);
+            arm.set_reg(ic, i, value);
+        }
+    }
+    addr
+}
+
+fn ldmda(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4 + 4;
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            let value = ic.read32(addr);
+            arm.set_reg(ic, i, value);
+            addr += 4;
+        }
+    }
+    new_base
+}
+
+fn ldmdb(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4;
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            let value = ic.read32(addr);
+            arm.set_reg(ic, i, value);
+            addr += 4;
+        }
+    }
+    new_base
+}
+
+fn get_reg(arm: &Arm7TDMI, index: usize) -> u32 {
+    if index == REG_PC {
+        // address of current instruction + 12 is stored
+        arm.regs[REG_PC] + 4
+    } else {
+        arm.regs[index]
+    }
+}
+
+fn stmia(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            ic.write32(addr, get_reg(arm, i));
+            addr += 4;
+        }
+    }
+    addr
+}
+
+fn stmib(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            addr += 4;
+            check_watchpoint!(arm, addr);
+            ic.write32(addr, get_reg(arm, i));
+        }
+    }
+    addr
+}
+
+fn stmda(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4 + 4;
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            ic.write32(addr, get_reg(arm, i));
+            addr += 4;
+        }
+    }
+    new_base
+}
+
+fn stmdb(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+    let new_base = addr - reglist.count_ones() * 4;
+    addr = addr - reglist.count_ones() * 4;
+    for i in 0usize..16 {
+        if reglist & (1 << i) != 0 {
+            check_watchpoint!(arm, addr);
+            ic.write32(addr, get_reg(arm, i));
+            addr += 4;
+        }
+    }
+    new_base
+}
+
 static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("0000 000S dddd nnnn ssss 1001 mmmm", "MUL*<S> %Rd, %Rm, %Rs", mul),
     ("0000 001S dddd nnnn ssss 1001 mmmm", "MLA*<S> %Rd, %Rm, %Rs, %Rn", mul),
@@ -301,6 +435,32 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("0001 0000 nnnn dddd 0000 1001 mmmm", "SWP* %Rd, %Rm [%Rn]", op_swp),
     ("0001 0100 nnnn dddd 0000 1001 mmmm", "SWPB* %Rd, %Rm [%Rn]", op_swpb),
     ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
+
+    ("1000 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIA<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, ldmia)
+    ),
+    ("1001 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIB<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, ldmib)
+    ),
+    ("1000 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDA<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, ldmda)
+    ),
+    ("1001 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDB<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, ldmdb)
+    ),
+
+    ("1000 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIA<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, stmia)
+    ),
+    ("1001 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIB<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, stmib)
+    ),
+    ("1000 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDA<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, stmda)
+    ),
+    ("1001 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDB<S> %Rn<wb>, { %+Rr }",
+        |arm, ic, op| block_data_transfer(arm, ic, op, stmdb)
+    ),
 
     // Don't bother disassembling these properly, they shouldn't occur
     ("110P UNWL nnnn dddd #### oooo oooo", "CP_DATA_TRANS*", op_coprocessor),
