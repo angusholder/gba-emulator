@@ -60,6 +60,10 @@ static REG_NAMES: [&'static str; 16] = [
     "R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"
 ];
 
+static PSR_REG_NAMES: [&'static str; 2] = [
+    "CPSR", "SPSR",
+];
+
 fn err<T: Into<Box<StdError>>>(t: T) -> Box<StdError> { t.into() }
 
 fn is_plaintext(c: char) -> bool {
@@ -134,6 +138,7 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
                 } else {
                     let reg_names = match reg_kind {
                         'R' | 'H' => &REG_NAMES[..],
+                        'P' => &PSR_REG_NAMES,
                         _ => return Err(err(format!("Unrecognised register kind '{}'", reg_kind)))
                     };
 

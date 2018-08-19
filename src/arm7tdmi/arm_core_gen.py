@@ -491,21 +491,6 @@ let value = {operation};
         ins_name = OPCODES[opcode][set_cc] + '_imm'
         fn_body = emit_data_processing(True, i)
 
-    # SWI
-    if match(i, '1111xxxxxxxx'):
-        assert not ins_name
-        ins_name = 'swi'
-
-    # Branch and Exchange
-    if match(i, '000100100001'):
-        assert not ins_name
-        ins_name = 'bx'
-
-    # Undefined
-    if match(i, '011xXXXXxxx1'):
-        assert not ins_name
-        ins_name = 'und'
-
     # Block Data Transfer
     if match(i, '100xxxxxXXXX'):
         assert not ins_name
@@ -535,31 +520,6 @@ let value = {operation};
 
     let mut addr = arm.regs[rn_index];
     {fn_body}'''
-
-    # MRS (PSR to register)
-    if match(i, '00010x000000'):
-        assert not ins_name
-        ins_name = 'mrs_reg'
-
-    # MSR (Register to PSR/PSR_flags)
-    if match(i, '00010x100000'):
-        assert not ins_name
-        ins_name = 'msr_reg'
-
-    # MSR (Imm to PSR flags)
-    if match(i, '00110x10xxxx'):
-        assert not ins_name
-        ins_name = 'msr_flag_imm'
-
-    # Single Data Swap
-    elif match(i, '00010x001001'):
-        byte = i & 0x040 != 0
-        ins_name = 'swpb' if byte else 'swp'
-
-    # Coprocessor
-    if match(i, '110xxxxxXXXX', '1110xxxxXXXX'):
-        assert not ins_name
-        ins_name = 'coprocessor'
 
     return (ins_name, fn_body)
 

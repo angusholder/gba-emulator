@@ -285,15 +285,29 @@ fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
 }
 
 static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
-    ("000000 0 s dddd nnnn ssss 1001 mmmm", "MUL<cond><S> %Rd, %Rm, %Rs", mul),
-    ("000000 1 s dddd nnnn ssss 1001 mmmm", "MLA<cond><S> %Rd, %Rm, %Rs, %Rn", mul),
+    ("0000 000S dddd nnnn ssss 1001 mmmm", "MUL*<S> %Rd, %Rm, %Rs", mul),
+    ("0000 001S dddd nnnn ssss 1001 mmmm", "MLA*<S> %Rd, %Rm, %Rs, %Rn", mul),
 
-    ("00001 00 s hhhh llll ssss 1001 mmmm", "UMULL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
-    ("00001 01 s hhhh llll ssss 1001 mmmm", "UMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
-    ("00001 10 s hhhh llll ssss 1001 mmmm", "SMULL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
-    ("00001 11 s hhhh llll ssss 1001 mmmm", "SMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("0000 100S hhhh llll ssss 1001 mmmm", "UMULL*<S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("0000 101S hhhh llll ssss 1001 mmmm", "UMLAL*<S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("0000 110S hhhh llll ssss 1001 mmmm", "SMULL*<S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("0000 111S hhhh llll ssss 1001 mmmm", "SMLAL*<S> %Rl, %Rh, %Rm, %Rs", mul_long),
 
-    ("1111 iiii iiii iiii iiii iiii iiii", "SWI<cond> #[i]", op_swi),
+    ("0001 0010 1111 1111 1111 0001 nnnn", "BX* %Rn", op_bx),
+    ("0001 0s00 1111 dddd 0000 0000 0000", "MRS* %Rd, %Ps", op_mrs_reg),
+    ("0001 0d10 1001 1111 0000 0000 mmmm", "MSR* %Pd, %Rm", op_msr_reg),
+    ("0001 0d10 1000 1111 0000 0000 mmmm", "MSR* %Pd_flg, %Rm", op_msr_reg),
+    ("0011 0d10 1000 1111 rrrr iiii iiii", "MSR* %Pd_flg, <rot_imm>", op_msr_flag_imm),
+    ("0001 0000 nnnn dddd 0000 1001 mmmm", "SWP* %Rd, %Rm [%Rn]", op_swp),
+    ("0001 0100 nnnn dddd 0000 1001 mmmm", "SWPB* %Rd, %Rm [%Rn]", op_swpb),
+    ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
+
+    // Don't bother disassembling these properly, they shouldn't occur
+    ("110P UNWL nnnn dddd #### oooo oooo", "CP_DATA_TRANS*", op_coprocessor),
+    ("1110 cccc nnnn dddd #### ppp0 mmmm", "CP_REG_OP*", op_coprocessor),
+    ("1110 cccL nnnn dddd #### ppp1 mmmm", "CP_DATA_OP*", op_coprocessor),
+
+    ("1111 iiii iiii iiii iiii iiii iiii", "SWI* #[i]", op_swi),
 ];
 
 //include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
