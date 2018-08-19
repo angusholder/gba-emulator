@@ -15,87 +15,6 @@ def match_ext(n, pat):
 def match(n, *pat):
     return any(match_ext(n, p) for p in pat)
 
-AND = 0b0000
-EOR = 0b0001
-SUB = 0b0010
-RSB = 0b0011
-ADD = 0b0100
-ADC = 0b0101
-SBC = 0b0110
-RSC = 0b0111
-TST = 0b1000
-TEQ = 0b1001
-CMP = 0b1010
-CMN = 0b1011
-ORR = 0b1100
-MOV = 0b1101
-BIC = 0b1110
-MVN = 0b1111
-
-OPCODES = {
-    AND: ('and', 'ands'),
-    EOR: ('eor', 'eors'),
-    SUB: ('sub', 'subs'),
-    RSB: ('rsb', 'rsbs'),
-    ADD: ('add', 'adds'),
-    ADC: ('adc', 'adcs'),
-    SBC: ('sbc', 'sbcs'),
-    RSC: ('rsc', 'rscs'),
-    TST: (None,  'tst'),
-    TEQ: (None,  'teq'),
-    CMP: (None,  'cmp'),
-    CMN: (None,  'cmn'),
-    ORR: ('orr', 'orrs'),
-    MOV: ('mov', 'movs'),
-    BIC: ('bic', 'bics'),
-    MVN: ('mvn', 'mvns'),
-}
-
-DATA_PROCESSING_FLAG_UPDATES = {}
-
-DATA_PROCESSING_FLAG_UPDATES[AND] = DATA_PROCESSING_FLAG_UPDATES[EOR] = DATA_PROCESSING_FLAG_UPDATES[ORR] = DATA_PROCESSING_FLAG_UPDATES[MOV] = DATA_PROCESSING_FLAG_UPDATES[BIC] = DATA_PROCESSING_FLAG_UPDATES[MVN] = DATA_PROCESSING_FLAG_UPDATES[TST] = DATA_PROCESSING_FLAG_UPDATES[TEQ] = '''\
-    set_zn(arm, result);\
-'''
-
-DATA_PROCESSING_FLAG_UPDATES[ADD] = DATA_PROCESSING_FLAG_UPDATES[ADC] = DATA_PROCESSING_FLAG_UPDATES[CMN] = '''\
-    set_zn(arm, result);
-    add_set_vc(arm, op1, op2);\
-'''
-
-DATA_PROCESSING_FLAG_UPDATES[RSB] = '''\
-    set_zn(arm, result);
-    sub_set_vc(arm, op2, op1);\
-'''
-
-DATA_PROCESSING_FLAG_UPDATES[SUB] = DATA_PROCESSING_FLAG_UPDATES[SBC] = DATA_PROCESSING_FLAG_UPDATES[CMP] = '''\
-    set_zn(arm, result);
-    sub_set_vc(arm, op1, op2);\
-'''
-
-DATA_PROCESSING_FLAG_UPDATES[RSC] = '''\
-    set_zn(arm, result);
-    sub_set_vc(arm, op2, op1);\
-'''
-
-DATA_PROCESSING_CALCULATION = {
-    AND: 'op1 & op2',
-    EOR: 'op1 ^ op2',
-    SUB: 'op1.wrapping_sub(op2)',
-    RSB: 'op2.wrapping_sub(op1)',
-    ADD: 'op1.wrapping_add(op2)',
-    ADC: 'op1.wrapping_add(op2.wrapping_add(arm.cpsr.c as u32))',
-    SBC: 'op1.wrapping_sub(op2.wrapping_add(!arm.cpsr.c as u32))',
-    RSC: 'op2.wrapping_sub(op1.wrapping_add(!arm.cpsr.c as u32))',
-    TST: 'op1 & op2',
-    TEQ: 'op1 ^ op2',
-    CMP: 'op1.wrapping_sub(op2)',
-    CMN: 'op1.wrapping_add(op2)',
-    ORR: 'op1 | op2',
-    MOV: 'op2',
-    BIC: 'op1 & !op2',
-    MVN: '!op2',
-}
-
 BARREL_SHIFT_OPS = {
     0b00: 'lsl',
     0b01: 'lsr',
@@ -130,31 +49,6 @@ def get_second_operand(I, set_cc, discriminant):
         barrel_shift_{shift_func}(arm, rm, shift_amount)
     }}\
 '''
-
-def emit_data_processing(imm, discr):
-    opcode = (i >> 5) & 0xF
-    set_cc = i & 0x010 != 0
-    if opcode in (TST, TEQ, CMP, CMN):
-        assert set_cc
-    op2 = get_second_operand(imm, set_cc, discr)
-    calculation = DATA_PROCESSING_CALCULATION[opcode]
-    flag_update = DATA_PROCESSING_FLAG_UPDATES[opcode] if set_cc else ''
-    result_writeback = '''
-    if rd_index != REG_PC {
-        arm.regs[rd_index] = result;
-    } else {
-        arm.branch_to(interconnect, result);
-    }\
-'''
-    if opcode & 0b1100 == 0b1000:
-        result_writeback = ''
-
-    return f'''\
-    let op1 = arm.regs[(op >> 16 & 0xF) as usize];
-    let rd_index = (op >> 12 & 0xF) as usize;
-    let op2 = {op2};
-    let result = {calculation};
-{flag_update}{result_writeback}'''
 
 def decode(i):
     ins_name = None
@@ -309,30 +203,6 @@ let value = {operation};
     check_watchpoint!(arm, addr);
 
     interconnect.write16(addr, rn as u16);{post_op}'''
-
-    # Data Processing (register)
-    is_test_ins = ((i >> 5) & 0b1100) == 0b1000
-    set_cc = ((i >> 4) & 1) != 0
-    if match(i, '000XXXXx0xx0', '000XXXXx1xx0', '000XXXXx0xx1') and (set_cc or not is_test_ins):
-        assert not ins_name
-        opcode = (i >> 5) & 0xF
-        set_cc = i & 0x010 != 0
-        shift_op = i >> 1 & 3
-        assert OPCODES[opcode][set_cc] is not None
-        ins_name = OPCODES[opcode][set_cc] + '_' + BARREL_SHIFT_OPS[shift_op]
-        if i & 1:
-            ins_name += '_reg'
-        else:
-            ins_name += '_imm'
-        fn_body = emit_data_processing(False, i)
-    # Data Processing (immediate)
-    if match(i, '001XXXXxXXXX') and (set_cc or not is_test_ins):
-        assert not ins_name
-        opcode = (i >> 5) & 0xF
-        set_cc = i & 0x010 != 0
-        assert OPCODES[opcode][set_cc] is not None
-        ins_name = OPCODES[opcode][set_cc] + '_imm'
-        fn_body = emit_data_processing(True, i)
 
     return (ins_name, fn_body)
 

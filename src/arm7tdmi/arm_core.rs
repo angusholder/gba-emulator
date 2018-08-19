@@ -1,21 +1,19 @@
-#![allow(unused_variables, private_no_mangle_fns, unused_assignments)]
-
 use std::cmp;
 
-use num::{ FromPrimitive, NumCast };
+use num::FromPrimitive;
 
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
 use log::*;
 
-pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: u32) -> StepEvent {
+pub fn step_arm(arm: &mut Arm7TDMI, _interconnect: &mut Interconnect, op: u32) -> StepEvent {
     let cond = ConditionCode::from_u32(op >> 28).unwrap();
     if !arm.eval_condition_code(cond) {
         return StepEvent::None;
     }
 
-    let discr = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
+    let _discr = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
 //    ARM_LUT[discr as usize](arm, interconnect, op)
     StepEvent::None
 }
@@ -240,9 +238,9 @@ fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let rs = arm.regs[rs_index];
 
     if signed {
-        ic.add_internal_cycles(1 + cmp::max(rs.leading_zeros(), (!rs).leading_zeros()) / 8);
+        ic.add_internal_cycles((1 + cmp::max(rs.leading_zeros(), (!rs).leading_zeros()) / 8) as _);
     } else {
-        ic.add_internal_cycles(1 + rs.leading_zeros() / 8);
+        ic.add_internal_cycles((1 + rs.leading_zeros() / 8) as _);
     }
 
     if acc {
@@ -293,7 +291,7 @@ fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, 
     let set_cc = op.flag(22);
 //    let up = op.flag(23);
 //    let preindex = op.flag(24);
-    let reglist = op.field(0, 16);
+    let reglist = op.field(0, 16) as u16;
 
     if set_cc {
         unimplemented!("block data transfer set_cc");
@@ -301,7 +299,7 @@ fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, 
 
     let mut addr = arm.regs[rn_index];
 
-    f(arm, ic, addr);
+    addr = f(arm, ic, reglist, addr);
 
     if writeback {
         assert!(rn_index != REG_PC);
@@ -429,7 +427,126 @@ fn branch(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     if link {
         arm.regs[REG_LR] = pc - 4;
     }
-    arm.branch_to(interconnect, addr);
+    arm.branch_to(ic, addr);
+}
+
+fn get_rotated_immediate(op: ArmOp) -> u32 {
+    let imm = op.field(0, 8);
+    let rotate = op.field(8, 4);
+    imm.rotate_right(rotate * 2)
+}
+
+fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) -> u32 {
+    const LSL: u32 = 0b00;
+    const LSR: u32 = 0b01;
+    const ASR: u32 = 0b10;
+    const ROR: u32 = 0b11;
+
+    let rm_index = op.reg(0);
+    let shift_by_reg = op.flag(4);
+    let shift_type = op.field(5, 2);
+    let setcc = op.flag(20);
+
+    let rm = arm.regs[rm_index];
+    let shift_amount = if shift_by_reg {
+        ic.add_internal_cycles(1);
+        arm.regs[op.reg(8)]
+    } else {
+        op.field(7, 5)
+    };
+
+    let shift_func = match (shift_type, setcc) {
+        (LSL, false) => barrel_shift_lsl,
+        (LSL, true) => barrel_shift_lsl_set_flags,
+        (LSR, false) => barrel_shift_lsr,
+        (LSR, true) => barrel_shift_lsr_set_flags,
+        (ASR, false) => barrel_shift_asr,
+        (ASR, true) => barrel_shift_asr_set_flags,
+        (ROR, false) => barrel_shift_ror,
+        (ROR, true) => barrel_shift_ror_set_flags,
+        _ => unreachable!()
+    };
+    shift_func(arm, rm, shift_amount)
+}
+
+fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    const AND: u32 = 0b0000;
+    const EOR: u32 = 0b0001;
+    const SUB: u32 = 0b0010;
+    const RSB: u32 = 0b0011;
+    const ADD: u32 = 0b0100;
+    const ADC: u32 = 0b0101;
+    const SBC: u32 = 0b0110;
+    const RSC: u32 = 0b0111;
+    const TST: u32 = 0b1000;
+    const TEQ: u32 = 0b1001;
+    const CMP: u32 = 0b1010;
+    const CMN: u32 = 0b1011;
+    const ORR: u32 = 0b1100;
+    const MOV: u32 = 0b1101;
+    const BIC: u32 = 0b1110;
+    const MVN: u32 = 0b1111;
+
+    let rn_index = op.reg(16);
+    let rd_index = op.reg(12);
+    let setcc = op.flag(20);
+    let opcode = op.field(21, 4);
+    let imm = op.flag(25);
+
+    let op1 = arm.regs[rn_index];
+    let op2 = if imm {
+        get_rotated_immediate(op)
+    } else {
+        get_shifted_register(arm, ic, op)
+    };
+
+    let result = match opcode {
+        AND => op1 & op2,
+        EOR => op1 ^ op2,
+        SUB => op1.wrapping_sub(op2),
+        RSB => op2.wrapping_sub(op1),
+        ADD => op1.wrapping_add(op2),
+        ADC => op1.wrapping_add(op2.wrapping_add(arm.cpsr.c as u32)),
+        SBC => op1.wrapping_sub(op2.wrapping_add(!arm.cpsr.c as u32)),
+        RSC => op2.wrapping_sub(op1.wrapping_add(!arm.cpsr.c as u32)),
+        TST => op1 & op2,
+        TEQ => op1 ^ op2,
+        CMP => op1.wrapping_sub(op2),
+        CMN => op1.wrapping_add(op2),
+        ORR => op1 | op2,
+        MOV => op2,
+        BIC => op1 & !op2,
+        MVN => !op2,
+        _ => unreachable!()
+    };
+
+    if setcc {
+        match opcode {
+            AND | EOR | ORR | MOV | BIC | MVN | TST | TEQ => {
+                set_zn(arm, result);
+            }
+            ADD | ADC | CMN => {
+                set_zn(arm, result);
+                add_set_vc(arm, op1, op2);
+            }
+            RSB | RSC => {
+                set_zn(arm, result);
+                sub_set_vc(arm, op2, op1);
+            }
+            SUB | SBC | CMP => {
+                set_zn(arm, result);
+                sub_set_vc(arm, op1, op2);
+            }
+            _ => unreachable!()
+        }
+    }
+
+    match opcode {
+        TST | TEQ | CMP | CMN => {}
+        _ => {
+            arm.set_reg(ic, rd_index, result);
+        }
+    }
 }
 
 static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
@@ -485,6 +602,23 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("1110 cccL nnnn dddd #### ppp1 mmmm", "CP_DATA_OP*", op_coprocessor),
 
     ("1111 iiii iiii iiii iiii iiii iiii", "SWI* #[i]", op_swi),
+
+    ("00I 0000 S nnnn dddd 2222 2222 2222", "AND<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0001 S nnnn dddd 2222 2222 2222", "EOR<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0010 S nnnn dddd 2222 2222 2222", "SUB<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0011 S nnnn dddd 2222 2222 2222", "RSB<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0100 S nnnn dddd 2222 2222 2222", "ADD<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0101 S nnnn dddd 2222 2222 2222", "ADC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0110 S nnnn dddd 2222 2222 2222", "SBC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 0111 S nnnn dddd 2222 2222 2222", "RSC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1000 1 nnnn dddd 2222 2222 2222", "TST* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1001 1 nnnn dddd 2222 2222 2222", "TEQ* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1010 1 nnnn dddd 2222 2222 2222", "CMP* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1011 1 nnnn dddd 2222 2222 2222", "CMN* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1100 S nnnn dddd 2222 2222 2222", "ORR<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1101 S nnnn dddd 2222 2222 2222", "MOV<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1110 S nnnn dddd 2222 2222 2222", "BIC<S>* %Rd, %Rn, <op2>", data_processing),
+    ("00I 1111 S nnnn dddd 2222 2222 2222", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
 ];
 
 //include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
