@@ -34,21 +34,19 @@ impl ArmOp {
 
 type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
 
-fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) -> StepEvent {
+fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) {
     error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
 }
 
-fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
+fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
     arm.signal_undef(interconnect);
-    StepEvent::None
 }
 
-fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
+fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
     arm.signal_undef(interconnect);
-    StepEvent::None
 }
 
-fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     let rm_index = op.reg(0);
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
@@ -67,10 +65,9 @@ fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> Ste
     interconnect.write32(addr, rm);
 
     interconnect.add_internal_cycles(1);
-    StepEvent::None
 }
 
-fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     let rm_index = op.reg(0);
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
@@ -89,10 +86,9 @@ fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> St
     interconnect.write8(addr, rm as u8);
 
     interconnect.add_internal_cycles(1);
-    StepEvent::None
 }
 
-fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if op.field(0, 12) != 0 || op.field(16, 4) != 0xF {
         return op_und(arm, interconnect, op);
     }
@@ -114,11 +110,9 @@ fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) ->
     };
 
     arm.regs[rd_index] = value;
-
-    StepEvent::None
 }
 
-fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if op.field(8, 12) & !0x100 != 0b1000_1111_0000 {
         return op_und(arm, interconnect, op);
     }
@@ -152,11 +146,9 @@ fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) ->
             }
         }
     }
-
-    StepEvent::None
 }
 
-fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if op.field(12, 8) != 0b1000_1111 {
         return op_und(arm, interconnect, op);
     }
@@ -177,24 +169,19 @@ fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmO
     } else {
         arm.cpsr.set_flags_from_bits(value);
     }
-
-    StepEvent::None
 }
 
-fn op_bx(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+fn op_bx(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if op.field(8, 12) != 0xFFF {
         return op_und(arm, interconnect, op);
     }
 
     let rn = arm.regs[op.reg(0)];
     arm.branch_exchange(interconnect, rn);
-
-    StepEvent::None
 }
 
-fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> StepEvent {
+fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
     arm.signal_swi(interconnect);
-    StepEvent::None
 }
 
 fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
@@ -305,6 +292,8 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("00001 01 s hhhh llll ssss 1001 mmmm", "UMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
     ("00001 10 s hhhh llll ssss 1001 mmmm", "SMULL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
     ("00001 11 s hhhh llll ssss 1001 mmmm", "SMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+
+    ("1111 iiii iiii iiii iiii iiii iiii", "SWI<cond> #[i]", op_swi),
 ];
 
 //include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
