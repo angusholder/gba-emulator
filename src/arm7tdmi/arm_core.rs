@@ -32,6 +32,8 @@ impl ArmOp {
     fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
 }
 
+type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
+
 fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) -> StepEvent {
     error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
 }
@@ -194,5 +196,115 @@ fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) -> Step
     arm.signal_swi(interconnect);
     StepEvent::None
 }
+
+fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rd_index = op.reg(16);
+    let rn_index = op.reg(12);
+    let rs_index = op.reg(8);
+    let rm_index = op.reg(0);
+
+    let setcc = op.flag(20);
+    let acc = op.flag(21);
+
+    assert!(rd_index != rm_index);
+    assert!(rd_index != REG_PC);
+    assert!(rs_index != REG_PC);
+    assert!(rn_index != REG_PC);
+    assert!(rm_index != REG_PC);
+
+    let rn = arm.regs[rn_index];
+    let rs = arm.regs[rs_index];
+    let rm = arm.regs[rm_index];
+
+    interconnect.add_internal_cycles((rs.leading_zeros() / 8) as _);
+
+    let result = if acc {
+        interconnect.add_internal_cycles(1);
+        rm.wrapping_mul(rs).wrapping_add(rn)
+    } else {
+        rm.wrapping_mul(rs)
+    };
+
+    arm.regs[rd_index] = result;
+
+    if setcc {
+        set_zn(arm, result);
+    }
+}
+
+fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rd_hi_index = op.reg(16);
+    let rd_lo_index = op.reg(12);
+    let rs_index = op.reg(8);
+    let rm_index = op.reg(0);
+
+    let setcc = op.flag(20);
+    let acc = op.flag(21);
+    let signed = op.flag(22);
+
+    assert!(rd_hi_index != REG_PC);
+    assert!(rd_lo_index != REG_PC);
+    assert!(rs_index != REG_PC);
+    assert!(rm_index != REG_PC);
+    assert!(rd_hi_index != rd_lo_index);
+    assert!(rd_hi_index != rm_index);
+    assert!(rd_lo_index != rm_index);
+
+    let rs = arm.regs[rs_index];
+
+    if signed {
+        ic.add_internal_cycles(1 + cmp::max(rs.leading_zeros(), (!rs).leading_zeros()) / 8);
+    } else {
+        ic.add_internal_cycles(1 + rs.leading_zeros() / 8);
+    }
+
+    if acc {
+        ic.add_internal_cycles(1);
+    }
+
+    let result: u64 = if signed {
+        let rm = arm.regs[rm_index] as i32 as i64;
+        let rs = arm.regs[rs_index] as i32 as i64;
+
+        if acc {
+            let rlo = arm.regs[rd_lo_index] as i32 as i64;
+            let rhi = arm.regs[rd_hi_index] as i32 as i64;
+            let rfull = rlo | (rhi << 32);
+            rm.wrapping_mul(rs).wrapping_add(rfull) as u64
+        } else {
+            rm.wrapping_mul(rs) as u64
+        }
+    } else {
+        let rm = arm.regs[rm_index] as u64;
+        let rs = arm.regs[rs_index] as u64;
+
+        if acc {
+            let rlo = arm.regs[rd_lo_index] as u64;
+            let rhi = arm.regs[rd_hi_index] as u64;
+            let rfull = rlo | (rhi << 32);
+            rm.wrapping_mul(rs).wrapping_add(rfull)
+        } else {
+            rm.wrapping_mul(rs)
+        }
+    };
+
+    arm.regs[rd_lo_index] = result as u32;
+    arm.regs[rd_hi_index] = (result >> 32) as u32;
+
+    if setcc {
+        arm.cpsr.c = result == 0;
+        arm.cpsr.n = (result as i64) < 0;
+    }
+}
+
+static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
+    ("000000 0 s dddd nnnn ssss 1001 mmmm", "MUL<cond><S> %Rd, %Rm, %Rs", mul),
+    ("000000 1 s dddd nnnn ssss 1001 mmmm", "MLA<cond><S> %Rd, %Rm, %Rs, %Rn", mul),
+
+    ("00001 00 s hhhh llll ssss 1001 mmmm", "UMULL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("00001 01 s hhhh llll ssss 1001 mmmm", "UMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("00001 10 s hhhh llll ssss 1001 mmmm", "SMULL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+    ("00001 11 s hhhh llll ssss 1001 mmmm", "SMLAL<cond><S> %Rl, %Rh, %Rm, %Rs", mul_long),
+];
 
 //include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));

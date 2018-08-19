@@ -37,7 +37,7 @@ impl ThumbOp {
     }
 }
 
-type ThumbEmuFn = fn(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ThumbOp);
+type ThumbEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ThumbOp);
 
 fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     where F: FnOnce(&mut Arm7TDMI, u32, u32) -> u32
