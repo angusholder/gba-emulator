@@ -14,6 +14,13 @@ type DisResult<T> = Result<T, Box<StdError>>;
 #[derive(Clone, Copy)]
 struct BitExtractMask(u32);
 
+enum Tag {
+    Operand2,
+    SetCC,
+    RotatedImmediate,
+    Writeback,
+}
+
 enum FormatOp {
     // A plain string
     Str(String),
@@ -29,14 +36,8 @@ enum FormatOp {
         mask: u16,
     },
 
-    //
-    Operand2,
-
-    // ?'!'[w]
-    Flag {
-        mask: u32,
-        text: String,
-    },
+    // <some_name>
+    Tag(Tag),
 
     // $jmp[j]
     JumpOffset {
@@ -98,7 +99,8 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
     let mut asm_iter = asm_fmt.char_indices().peekable();
     let mut ops = Vec::new();
     while let Some((index, c)) = asm_iter.next() {
-        match c {
+        let mut to_skip = 0;
+        let op: FormatOp = match c {
             '%' => {
                 let reglist = asm_iter.peek().map(|(_, c)| *c) == Some('+');
 
@@ -134,7 +136,7 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
                         _ => return Err(err(format!("Unrecognised register kind '{}'", reg_kind)))
                     };
 
-                    ops.push(FormatOp::RegList { mask })
+                    FormatOp::RegList { mask }
                 } else {
                     let reg_names = match reg_kind {
                         'R' | 'H' => &REG_NAMES[..],
@@ -142,37 +144,22 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
                         _ => return Err(err(format!("Unrecognised register kind '{}'", reg_kind)))
                     };
 
-                    ops.push(FormatOp::Reg { bit_extract_mask, reg_names });
+                    FormatOp::Reg { bit_extract_mask, reg_names }
                 }
-            }
-            '?' => {
-                let caps: Captures = FLAG_REGEX.captures(&asm_fmt[index..]).ok_or(err("Immediate was formatted incorrectly"))?;
-                let text = caps.get(1).unwrap().as_str().to_string();
-                let bitfield_name = caps.get(2).unwrap().as_str().chars().next().unwrap();
-                let mask = match bit_fmt.find(bitfield_name) {
-                    None => {
-                        return Err(err(format!("Unable to find bit '{}' in bit format for asm string {}", bitfield_name, asm_fmt)));
-                    }
-                    Some(pos) if bit_fmt[pos..].find(bitfield_name).is_some() => {
-                        return Err(err(format!("There were multiple '{}' bits in bit format for asm string {}", bitfield_name, asm_fmt)));
-                    }
-                    Some(pos) => {
-                        (1 << pos) as u32
-                    }
-                };
-                ops.push(FormatOp::Flag { mask, text });
             }
             '$' => {
                 let caps: Captures = JMP_REGEX.captures(&asm_fmt[index..]).ok_or(err("Jump offset was formatted incorrectly"))?;
-                let bitfield_name = caps.get(1).unwrap().as_str().chars().next().unwrap();
+                to_skip = caps[0].len();
+                let bitfield_name = caps[1].chars().next().unwrap();
                 let bit_extract_mask = make_extract_mask(&bit_fmt, bitfield_name)?;
-                ops.push(FormatOp::JumpOffset { bit_extract_mask });
+                FormatOp::JumpOffset { bit_extract_mask }
             }
             '#' => {
                 let caps: Captures = IMM_REGEX.captures(&asm_fmt[index..]).ok_or(err("Immediate was formatted incorrectly"))?;
-                let bitfield_name = caps.get(1).unwrap().as_str().chars().next().unwrap();
+                to_skip = caps[0].len();
+                let bitfield_name = caps[1].chars().next().unwrap();
                 let bit_extract_mask = make_extract_mask(&bit_fmt, bitfield_name)?;
-                ops.push(FormatOp::Imm { bit_extract_mask });
+                FormatOp::Imm { bit_extract_mask }
             }
             _ if is_plaintext(c) => {
                 let mut text = String::new();
@@ -184,12 +171,14 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
                         break;
                     }
                 }
-                ops.push(FormatOp::Str(text));
+                FormatOp::Str(text)
             }
             _ => {
                 return Err(err(format!("Unexpected character '{}'", c)));
             }
-        }
+        };
+        ops.push(op);
+        for _ in 0..to_skip { asm_iter.next(); }
     }
     Ok(ops)
 }
@@ -214,11 +203,6 @@ fn disassemble(word: u32, address: u32, ops: &[FormatOp], output: &mut Write) ->
                     .join(", ");
                 output.write_str(&reglist)?;
             }
-            FormatOp::Flag { mask, text } => {
-                if word & mask != 0 {
-                    output.write_str(text)?;
-                }
-            }
             FormatOp::JumpOffset { bit_extract_mask } => {
                 let offset = word.pext(*bit_extract_mask);
                 // TODO: Add the appropriate branch target offset of 2/4/8
@@ -233,7 +217,7 @@ fn disassemble(word: u32, address: u32, ops: &[FormatOp], output: &mut Write) ->
                     output.write_fmt(format_args!("#{:08X}", imm))?;
                 }
             }
-            FormatOp::Operand2 => unimplemented!()
+            FormatOp::Tag(_) => unimplemented!()
         }
     }
     Ok(())
