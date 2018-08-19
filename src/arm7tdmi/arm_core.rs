@@ -608,11 +608,74 @@ fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect,
     check_watchpoint!(arm, addr);
 
     ic.add_internal_cycles(1);
-    let value = T::STORE(ic, addr, rd);
+    T::STORE(ic, addr, T::from(rd).unwrap());
 
     if writeback {
-        // TODO: Handle PC?
-        arm.regs[rn_index] += offset;
+        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
+    }
+}
+
+fn sh_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rn_index = op.reg(16);
+    let rd_index = op.reg(12);
+    let writeback = op.flag(21);
+    let imm = op.flag(22);
+    let up = op.flag(23);
+    let preindex = op.flag(24);
+
+    let rn = arm.regs[rn_index];
+
+    let mut offset = if imm {
+        op.field(0, 4) | op.field(8, 4) << 4
+    } else {
+        arm.regs[op.reg(0)]
+    };
+
+    if !up {
+        offset = ((offset) as i32).wrapping_neg() as u32;
+    }
+
+    let addr = if preindex { rn.wrapping_add(offset) } else { rn };
+    check_watchpoint!(arm, addr);
+
+    ic.add_internal_cycles(1); // internal cycle for address calculation
+
+    let value = T::LOAD(ic, addr);
+    arm.set_reg(ic, rd_index, value);
+
+    if writeback {
+        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
+    }
+}
+
+fn half_data_store(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let rn_index = op.reg(16);
+    let rd_index = op.reg(12);
+    let writeback = op.flag(21);
+    let imm = op.flag(22);
+    let up = op.flag(23);
+    let preindex = op.flag(24);
+
+    let rn = arm.regs[rn_index];
+    let rd = arm.regs[rd_index];
+
+    let mut offset = if imm {
+        op.field(0, 4) | op.field(8, 4) << 4
+    } else {
+        arm.regs[op.reg(0)]
+    };
+
+    if !up {
+        offset = ((offset) as i32).wrapping_neg() as u32;
+    }
+
+    let addr = if preindex { rn.wrapping_add(offset) } else { rn };
+    check_watchpoint!(arm, addr);
+
+    ic.write16(addr, rd as u16);
+
+    if writeback {
+        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
     }
 }
 
@@ -697,6 +760,14 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", single_data_store::<u32>),
     ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
     ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
-];
 
-//include!(concat!(env!("OUT_DIR"), "/arm_core_generated.rs"));
+    ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH %Rd, [%Rn, %Rm]", sh_data_load::<u16>),
+    ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB %Rd, [%Rn, %Rm]", sh_data_load::<i8>),
+    ("000P U0W1 nnnn dddd 0000 1111 mmmm", "LDRSH %Rd, [%Rn, %Rm]", sh_data_load::<i16>),
+    ("000P U0W0 nnnn dddd 0000 1011 mmmm", "STRH %Rd, [%Rn, %Rm]", half_data_store),
+
+    ("000P U1W1 nnnn dddd iiii 1011 iiii", "LDRH %Rd, [%Rn, #[i]]", sh_data_load::<u16>),
+    ("000P U1W1 nnnn dddd iiii 1101 iiii", "LDRSB %Rd, [%Rn, #[i]]", sh_data_load::<i8>),
+    ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH %Rd, [%Rn, #[i]]", sh_data_load::<i16>),
+    ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH %Rd, [%Rn, #[i]]", half_data_store),
+];
