@@ -450,29 +450,29 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("0001 0100 nnnn dddd 0000 1001 mmmm", "SWPB* %Rd, %Rm [%Rn]", op_swpb),
     ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
 
-    ("1000 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIA<S> %Rn<wb>, { %+Rr }",
+    ("1000 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIA<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, ldmia)
     ),
-    ("1001 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIB<S> %Rn<wb>, { %+Rr }",
+    ("1001 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIB<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, ldmib)
     ),
-    ("1000 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDA<S> %Rn<wb>, { %+Rr }",
+    ("1000 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDA<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, ldmda)
     ),
-    ("1001 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDB<S> %Rn<wb>, { %+Rr }",
+    ("1001 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDB<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, ldmdb)
     ),
 
-    ("1000 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIA<S> %Rn<wb>, { %+Rr }",
+    ("1000 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIA<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, stmia)
     ),
-    ("1001 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIB<S> %Rn<wb>, { %+Rr }",
+    ("1001 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIB<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, stmib)
     ),
-    ("1000 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDA<S> %Rn<wb>, { %+Rr }",
+    ("1000 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDA<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, stmda)
     ),
-    ("1001 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDB<S> %Rn<wb>, { %+Rr }",
+    ("1001 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDB<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, stmdb)
     ),
 
