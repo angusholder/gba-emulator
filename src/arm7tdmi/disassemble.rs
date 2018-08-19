@@ -87,7 +87,7 @@ fn compile(asm_fmt: &str, bit_fmt: &str) -> DisResult<Vec<FormatOp>> {
     let bit_fmt = bit_fmt.chars().rev().filter(|&c| c != ' ').collect::<String>();
     let bit_len = bit_fmt.len();
 
-    if bit_len != 16 && bit_len != 32 {
+    if bit_len != 16 && bit_len != 28 {
         return Err(err(format!("Expected bit format to contain 16 or 32 field characters, got {}", bit_len)));
     }
 
