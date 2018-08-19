@@ -418,6 +418,20 @@ fn stmdb(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32)
     new_base
 }
 
+fn branch(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+    let offset = op.field(0, 24);
+    let link = op.flag(24);
+
+    let offset = sign_extend(offset, 24);
+
+    let pc = arm.regs[REG_PC];
+    let addr = pc.wrapping_add(offset);
+    if link {
+        arm.regs[REG_LR] = pc - 4;
+    }
+    arm.branch_to(interconnect, addr);
+}
+
 static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("0000 000S dddd nnnn ssss 1001 mmmm", "MUL*<S> %Rd, %Rm, %Rs", mul),
     ("0000 001S dddd nnnn ssss 1001 mmmm", "MLA*<S> %Rd, %Rm, %Rs, %Rn", mul),
@@ -461,6 +475,9 @@ static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("1001 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDB<S> %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, stmdb)
     ),
+
+    ("1010 oooo oooo oooo oooo oooo oooo", "B* $offset[o]", branch),
+    ("1011 oooo oooo oooo oooo oooo oooo", "BL* $offset[o]", branch),
 
     // Don't bother disassembling these properly, they shouldn't occur
     ("110P UNWL nnnn dddd #### oooo oooo", "CP_DATA_TRANS*", op_coprocessor),

@@ -310,27 +310,6 @@ let value = {operation};
 
     interconnect.write16(addr, rn as u16);{post_op}'''
 
-    # Branch
-    if match(i, '101xXXXXxxxx'):
-        assert not ins_name
-        link = i & 0x100 != 0
-
-        ins_name = 'bl' if link else 'b'
-        do_link = '\n    arm.regs[REG_LR] = pc - 4;\n' if link else ''
-
-        fn_body = f'''\
-    // Sign extend offset
-    let offset = if op & 0x80_0000 != 0 {{
-        ((op & 0xFF_FFFF) | 0xFF00_0000) << 2
-    }} else {{
-        (op & 0xFF_FFFF) << 2
-    }};
-
-    let pc = arm.regs[REG_PC];
-    let addr = pc.wrapping_add(offset);
-    {do_link}
-    arm.branch_to(interconnect, addr);'''
-
     # Data Processing (register)
     is_test_ins = ((i >> 5) & 0b1100) == 0b1000
     set_cc = ((i >> 4) & 1) != 0
