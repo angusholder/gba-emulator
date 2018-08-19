@@ -66,7 +66,7 @@ pub struct Interconnect {
     rom: Buffer,
     ewram: Buffer,
     iwram: Buffer,
-    io_cache: Buffer,
+    pub io_cache: Buffer,
     gamepak: GamePak,
 
     sram_wait_control: Cycle,

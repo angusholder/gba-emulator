@@ -1,7 +1,12 @@
 use std::cmp::Ord;
 use std::ops::{ Add, AddAssign, Sub, SubAssign };
 use std::fmt;
+use std::fmt::UpperHex;
 use std::slice;
+
+use interconnect::Interconnect;
+
+use num::PrimInt;
 
 #[allow(unused_imports)]
 use log::LogKind::*;
@@ -90,63 +95,81 @@ macro_rules! unpacked_bitfield_struct {
     )+ };
 }
 
-macro_rules! size {
-    (u8) => { 1u32 };
-    (u16) => { 2u32 };
-    (u32) => { 4u32 };
+fn foo<T: PrimInt, IO: PrimInt>(val: T, offset: u32) -> IO {
+    use std::mem::size_of;
+    match (size_of::<T>(), size_of::<IO>()) {
+        (1, 1) | (2, 2) | (4, 4) => IO::from(val).unwrap(),
+        (1, 2) | (1, 4) | (2, 4) => IO::from(val).unwrap() << (offset * 8) as usize,
+        (2, 1) | (4, 1) | (4, 2) => IO::from(val >> (offset * 8) as usize).unwrap(),
+        _ => unreachable!()
+    }
 }
 
-macro_rules! foo {
-    (from: u8,  to: u8,  $val:expr, $offset:expr) => ($val);
-    (from: u16, to: u16, $val:expr, $offset:expr) => ($val);
-    (from: u32, to: u32, $val:expr, $offset:expr) => ($val);
-
-    (from: u8,  to: u16, $val:expr, $offset:expr) => (($val as u16) << ($offset*8));
-    (from: u8,  to: u32, $val:expr, $offset:expr) => (($val as u32) << ($offset*8));
-
-    (from: u16, to: u8,  $val:expr, $offset:expr) => (($val >> ($offset*8)) as u8);
-    (from: u16, to: u32, $val:expr, $offset:expr) => (($val as u32) << ($offset*8));
-
-    (from: u32, to: u8,  $val:expr, $offset:expr) => (($val >> ($offset*8)) as u8);
-    (from: u32, to: u16, $val:expr, $offset:expr) => (($val >> ($offset*8)) as u16);
+pub trait Cache {
+    const READ: fn(&Buffer, u32) -> Self;
+    const WRITE: fn(&mut Buffer, u32, Self);
 }
 
-macro_rules! read_cache {
-    ($cache:expr, u8, $addr:expr) => { $cache.read8($addr) };
-    ($cache:expr, u16, $addr:expr) => { $cache.read16($addr) };
-    ($cache:expr, u32, $addr:expr) => { $cache.read32($addr) };
+impl Cache for u8 {
+    const READ: fn(&Buffer, u32) -> Self = Buffer::read8;
+    const WRITE: fn(&mut Buffer, u32, Self) = Buffer::write8;
 }
 
-macro_rules! write_cache {
-    ($cache:expr, u8, $addr:expr, $value:expr) => { $cache.write8($addr, $value); };
-    ($cache:expr, u16, $addr:expr, $value:expr) => { $cache.write16($addr, $value); };
-    ($cache:expr, u32, $addr:expr, $value:expr) => { $cache.write32($addr, $value); };
+impl Cache for u16 {
+    const READ: fn(&Buffer, u32) -> Self = Buffer::read16;
+    const WRITE: fn(&mut Buffer, u32, Self) = Buffer::write16;
+}
+
+impl Cache for u32 {
+    const READ: fn(&Buffer, u32) -> Self = Buffer::read32;
+    const WRITE: fn(&mut Buffer, u32, Self) = Buffer::write32;
+}
+
+pub fn handle_read<T: PrimInt + UpperHex, IO: PrimInt>(
+    ic: &Interconnect,
+    addr: u32,
+    case_addr_name: &str,
+    case_addr: u32,
+    getter: &Fn(&Interconnect) -> T
+) -> (u32, IO) {
+    use std::cmp;
+    use std::mem::size_of;
+
+    let size_of_t = size_of::<T>() as u32;
+    let size_of_io_type = size_of::<IO>() as u32;
+
+    let type_size = cmp::max(size_of_t, size_of_io_type);
+    let mask: u32 = !(type_size - 1);
+    if (addr & mask) == (case_addr & mask) {
+        let offset = case_addr&!mask | addr&!mask;
+        let value: T = getter(ic);
+        trace!(IO, "Reading 0x{:X} from {} (0x{:X})",
+                           value, case_addr_name, case_addr);
+        (size_of_t, foo(value, offset))
+    } else {
+        (0, IO::zero())
+    }
 }
 
 macro_rules! read_io_method {
     ($fn_name:ident, $io_type:ident, $($T:ident, $case_addr:expr, $getter:expr,)+) => {
         pub fn $fn_name(&self, addr: u32) -> $io_type {
-            use std::cmp;
+            use utils::handle_read;
+            use std::mem::size_of;
+
             let mut result: $io_type = 0;
             let mut bytes_handled = 0;
             debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
-            $({
-                let type_size = cmp::max(size!($T), size!($io_type));
-                let mask: u32 = !(type_size - 1);
-                if (addr & mask) == ($case_addr & mask) {
-                    bytes_handled += size!($T);
-                    // May be unused by foo!()
-                    let _offset = $case_addr&!mask | addr&!mask;
-                    let value: $T = $getter(self);
-                    result |= foo!(from: $T, to: $io_type, value, _offset);
-                    trace!(IO, "Reading 0x{:X} from {} (0x{:X})",
-                           value, stringify!($case_addr), $case_addr);
-                }
-            })+
+            $(
+                let (bytes, res) = handle_read::<$T, $io_type>(self, addr, stringify!($case_addr), $case_addr, &$getter);
+                result |= res;
+                bytes_handled += bytes;
+            )+
 
-            if bytes_handled < size!($io_type) {
-                warn!(IO, "Unhandled ioread{} at 0x400_0{:03X}", 8*size!($io_type), addr & 0xFFF);
+            let size_of_io_type = size_of::<$io_type>();
+            if bytes_handled < size_of_io_type as u32 {
+                warn!(IO, "Unhandled ioread{} at 0x400_0{:03X}", 8*size_of_io_type, addr & 0xFFF);
             }
 
             result
@@ -154,34 +177,58 @@ macro_rules! read_io_method {
     }
 }
 
+pub fn handle_write<T: Cache + PrimInt + UpperHex, IO: PrimInt>(
+    ic: &mut Interconnect,
+    addr: u32,
+    value: IO,
+    case_addr_name: &str,
+    case_addr: u32,
+    setter: &Fn(&mut Interconnect, T)
+) -> u32 {
+    use std::cmp;
+    use std::mem::size_of;
+
+    let size_of_t = size_of::<T>() as u32;
+    let size_of_io_type = size_of::<IO>() as u32;
+
+    let value: T = T::from(value).unwrap();
+
+    let type_size: u32 = cmp::max(size_of_t, size_of_io_type);
+    let mask: u32 = !(type_size - 1);
+    if (addr & mask) == (case_addr & mask) {
+        let offset: T = T::from(case_addr&!mask | addr&!mask).unwrap();
+        let offset_t8: usize = offset.to_usize().unwrap() * 8;
+        let addr: u32 = if size_of_io_type > size_of_t { addr } else { addr & mask };
+        let whole: T = T::READ(&ic.io_cache, addr & 0xFFF);
+        let new: T = if size_of_io_type > size_of_t {
+            value >> offset_t8
+        } else {
+            whole & !(T::from(IO::max_value()).unwrap() << offset_t8) | (value << offset_t8)
+        };
+        T::WRITE(&mut ic.io_cache, addr & 0xFFF, new);
+        setter(ic, new);
+        trace!(IO, "Writing 0x{:X} to {} (0x{:X})", new, case_addr_name, case_addr);
+        size_of_t
+    } else {
+        0
+    }
+}
+
 macro_rules! write_io_method {
     ($fn_name:ident, $io_type:ident, $($T:ident, $case_addr:expr, $setter:expr,)+) => {
         fn $fn_name(&mut self, addr: u32, value: $io_type) {
-            use std::cmp;
+            use utils::handle_write;
+            use std::mem::size_of;
             let mut bytes_handled = 0;
             debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
-            $({
-                let type_size = cmp::max(size!($T), size!($io_type));
-                let mask: u32 = !(type_size - 1);
-                if (addr & mask) == ($case_addr & mask) {
-                    bytes_handled += size!($T);
-                    let offset = ($case_addr&!mask | addr&!mask) as $T;
-                    let addr = if size!($io_type) > size!($T) { addr } else { addr & mask };
-                    let whole = read_cache!(self.io_cache, $T, addr & 0xFFF);
-                    let new: $T = if size!($io_type) > size!($T) {
-                        (value >> (offset*8)) as $T
-                    } else {
-                        whole & !(($io_type::max_value() as $T) << (offset*8)) | ((value as $T) << (offset*8))
-                    };
-                    write_cache!(self.io_cache, $T, addr & 0xFFF, new);
-                    $setter(self, new);
-                    trace!(IO, "Writing 0x{:X} to {} (0x{:X})", new, stringify!($case_addr), $case_addr);
-                }
-            })+
+            $(
+                bytes_handled += handle_write::<$T, $io_type>(self, addr, value, stringify!($case_addr), $case_addr, &$setter);
+            )+
 
-            if bytes_handled < size!($io_type) {
-                warn!(IO, "Unhandled iowrite{} at 0x400_0{:03X} of {:X}", 8*size!($io_type), addr & 0xFFF, value);
+            let size_of_io_type = size_of::<$io_type>();
+            if bytes_handled < size_of_io_type as u32 {
+                warn!(IO, "Unhandled iowrite{} at 0x400_0{:03X} of {:X}", 8*size_of_io_type, addr & 0xFFF, value);
             }
         }
     }
@@ -207,6 +254,7 @@ macro_rules! impl_io_map {
     }
 }
 
+/*
 #[test]
 fn memory_map() {
     struct Foo {
@@ -321,7 +369,7 @@ fn memory_map() {
     assert_eq!(foo.ioread8(5), 0x56);
     assert_eq!(foo.ioread8(6), 0x34);
     assert_eq!(foo.ioread8(7), 0x12);*/
-}
+}*/
 
 #[derive(Clone)]
 pub struct Buffer {
