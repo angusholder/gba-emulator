@@ -22,6 +22,7 @@ mod renderer;
 mod timer;
 mod gamepak;
 mod dma;
+mod iomap;
 
 use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;

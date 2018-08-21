@@ -153,7 +153,7 @@ pub fn handle_read<T: PrimInt + UpperHex, IO: PrimInt>(
 
 macro_rules! read_io_method {
     ($fn_name:ident, $io_type:ident, $($T:ident, $case_addr:expr, $getter:expr,)+) => {
-        pub fn $fn_name(&self, addr: u32) -> $io_type {
+        pub fn $fn_name(ic: &Interconnect, addr: u32) -> $io_type {
             use utils::handle_read;
             use std::mem::size_of;
 
@@ -162,7 +162,7 @@ macro_rules! read_io_method {
             debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
             $(
-                let (bytes, res) = handle_read::<$T, $io_type>(self, addr, stringify!($case_addr), $case_addr, &$getter);
+                let (bytes, res) = handle_read::<$T, $io_type>(ic, addr, stringify!($case_addr), $case_addr, &$getter);
                 result |= res;
                 bytes_handled += bytes;
             )+
@@ -216,14 +216,14 @@ pub fn handle_write<T: Cache + PrimInt + UpperHex, IO: PrimInt>(
 
 macro_rules! write_io_method {
     ($fn_name:ident, $io_type:ident, $($T:ident, $case_addr:expr, $setter:expr,)+) => {
-        fn $fn_name(&mut self, addr: u32, value: $io_type) {
+        pub fn $fn_name(ic: &mut Interconnect, addr: u32, value: $io_type) {
             use utils::handle_write;
             use std::mem::size_of;
             let mut bytes_handled = 0;
             debug_assert!(addr & 0xFF00_0000 == 0x0400_0000);
 
             $(
-                bytes_handled += handle_write::<$T, $io_type>(self, addr, value, stringify!($case_addr), $case_addr, &$setter);
+                bytes_handled += handle_write::<$T, $io_type>(ic, addr, value, stringify!($case_addr), $case_addr, &$setter);
             )+
 
             let size_of_io_type = size_of::<$io_type>();
@@ -236,21 +236,19 @@ macro_rules! write_io_method {
 
 macro_rules! impl_io_map {
     (
-        [$struct_type:ty]
+        //[$struct_type:ty]
         $(($T:ident, $case_addr:expr) {
             read => $getter:expr,
             write => $setter:expr
         })+
     ) => {
-        impl $struct_type {
-            read_io_method!(ioread8, u8, $($T, $case_addr, $getter,)+);
-            read_io_method!(ioread16, u16, $($T, $case_addr, $getter,)+);
-            read_io_method!(ioread32, u32, $($T, $case_addr, $getter,)+);
+        read_io_method!(read8, u8, $($T, $case_addr, $getter,)+);
+        read_io_method!(read16, u16, $($T, $case_addr, $getter,)+);
+        read_io_method!(read32, u32, $($T, $case_addr, $getter,)+);
 
-            write_io_method!(iowrite8, u8, $($T, $case_addr, $setter,)+);
-            write_io_method!(iowrite16, u16, $($T, $case_addr, $setter,)+);
-            write_io_method!(iowrite32, u32, $($T, $case_addr, $setter,)+);
-        }
+        write_io_method!(write8, u8, $($T, $case_addr, $setter,)+);
+        write_io_method!(write16, u16, $($T, $case_addr, $setter,)+);
+        write_io_method!(write32, u32, $($T, $case_addr, $setter,)+);
     }
 }
 
