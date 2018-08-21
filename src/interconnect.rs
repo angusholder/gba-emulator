@@ -427,7 +427,7 @@ impl_io_map! {
         }
     }
 
-    (u32, REG_SOUNDBIAS) {
+    (u16, REG_SOUNDBIAS) {
         read => |ic: &Interconnect| {
             ic.sound_bias.into()
         },
@@ -457,7 +457,7 @@ impl_io_map! {
         }
     }
 
-    (u32, REG_WAITCNT) {
+    (u16, REG_WAITCNT) {
         read => |_ic: &Interconnect| {
             warn!(IO, "Reading stubbed WAITCNT");
             0
@@ -475,9 +475,9 @@ impl_io_map! {
         }
     }
 
-    (u32, REG_IME) {
+    (u16, REG_IME) {
         read => |ic: &Interconnect| {
-            ic.master_interrupt_enable as u32
+            ic.master_interrupt_enable as u16
         },
         write => |ic: &mut Interconnect, value| {
             trace!(CPU, "Setting master_interrupt_enable = {}", ic.master_interrupt_enable);
@@ -873,7 +873,7 @@ pub struct IrqFlags: u16 {
 
 unpacked_bitfield_struct! {
 #[derive(Clone, Copy)]
-pub struct WaitStateControlReg: u32 {
+pub struct WaitStateControlReg: u16 {
     (0, 2) sram_wait_control: usize,
     (2, 2) wait_state_0_non_seq: usize,
     (4, 1) wait_state_0_seq: usize,
@@ -887,7 +887,7 @@ pub struct WaitStateControlReg: u32 {
 }
 
 #[derive(Clone, Copy)]
-pub struct SoundPWMControlReg: u32 {
+pub struct SoundPWMControlReg: u16 {
     (0,10) bias_level: u16,
     (14,2) amplitude_resolution: u8,
 }
