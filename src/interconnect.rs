@@ -6,6 +6,7 @@ use gamepak::GamePak;
 use log::*;
 use arm7tdmi::{ Arm7TDMI, StepEvent };
 use iomap;
+use std::fmt::UpperHex;
 
 const ROM_SIZE: u32 = 0x4000;
 const ROM_MASK: u32 = ROM_SIZE - 1;
@@ -39,17 +40,12 @@ const BASE_OAM: u32 = 0x7;
 const BASE_GAMEPAK_START: u32 = 0x8;
 const BASE_GAMEPAK_END: u32 = 0xD;
 
-macro_rules! unhandled_read {
-    ($self:expr, $addr:expr) => ({
-        warn!(IO, "Out of range read at 0x{:04x}_{:04x}", $addr >> 16, $addr & 0xFFFF);
-        (Cycle(1), $self.prefetch[1] as _)
-    })
+fn unhandled_read(addr: u32) {
+    warn!(IO, "Out of range read at 0x{:04x}_{:04x}", addr >> 16, addr & 0xFFFF);
 }
 
-macro_rules! unhandled_write {
-    ($addr:expr, $value:expr) => {
-        error!(IO, "Out of range write at 0x{:04x}_{:04x} of {:X}", $addr >> 16, $addr & 0xFFFF, $value)
-    }
+fn unhandled_write<T: UpperHex>(addr: u32, value: T) -> ! {
+    error!(IO, "Out of range write at 0x{:04x}_{:04x} of {:X}", addr >> 16, addr & 0xFFFF, value)
 }
 
 #[derive(Clone)]
@@ -191,7 +187,10 @@ impl Interconnect {
                 self.gamepak.read8(addr)
             }
 
-            _ => unhandled_read!(self, addr)
+            _ => {
+                unhandled_read(addr);
+                (Cycle(1), self.prefetch[1] as _)
+            }
         }
     }
 
@@ -218,7 +217,10 @@ impl Interconnect {
                 self.gamepak.read16(addr)
             }
 
-            _ => unhandled_read!(self, addr)
+            _ => {
+                unhandled_read(addr);
+                (Cycle(1), self.prefetch[1] as _)
+            }
         }
     }
 
@@ -245,7 +247,10 @@ impl Interconnect {
                 self.gamepak.read32(addr)
             }
 
-            _ => unhandled_read!(self, addr)
+            _ => {
+                unhandled_read(addr);
+                (Cycle(1), self.prefetch[1] as _)
+            }
         }
     }
 
@@ -267,7 +272,7 @@ impl Interconnect {
             BASE_VRAM => self.renderer.vram_write8(addr, value),
             BASE_OAM => self.renderer.oam_write8(addr, value),
 
-            _ => unhandled_write!(addr, value),
+            _ => unhandled_write(addr, value),
         }
     }
 
@@ -291,7 +296,7 @@ impl Interconnect {
             BASE_VRAM => self.renderer.vram_write16(addr, value),
             BASE_OAM => self.renderer.oam_write16(addr, value),
 
-            _ => unhandled_write!(addr, value),
+            _ => unhandled_write(addr, value),
         }
     }
 
@@ -315,7 +320,7 @@ impl Interconnect {
             BASE_VRAM => self.renderer.vram_write32(addr, value),
             BASE_OAM => self.renderer.oam_write32(addr, value),
 
-            _ => unhandled_write!(addr, value),
+            _ => unhandled_write(addr, value),
         }
     }
 
