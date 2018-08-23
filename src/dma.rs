@@ -181,6 +181,27 @@ fn initialize_dma(dma: &mut Dma) {
     });
 }
 
+fn write_latched_lo(unit: DmaUnit, l: &mut Latched<u32>, value: u16) {
+    let cur = l.get_next();
+    l.set(map_addr(unit, (cur & !0xFFFF) | (value as u32)));
+}
+
+fn write_latched_hi(unit: DmaUnit, l: &mut Latched<u32>, value: u16) {
+    let cur = l.get_next();
+    l.set(map_addr(unit, (cur & 0xFFFF) | (value as u32) << 16));
+}
+
+fn map_addr(unit: DmaUnit, addr: u32) -> u32 {
+    match unit {
+        Dma0 => { // internal memory only
+            addr & 0x07FF_FFFF
+        }
+        Dma1 | Dma2 | Dma3 => { // any memory
+            addr & 0x0FFF_FFFF
+        }
+    }
+}
+
 impl Dma {
     pub fn new(unit: DmaUnit) -> Dma {
         Dma {
@@ -223,26 +244,17 @@ impl Dma {
     }
 
     pub fn write_source(&mut self, addr: u32) {
-        match self.unit {
-            Dma0 => { // internal memory only
-                self.source.set(addr & 0x07FF_FFFF);
-            }
-            Dma1 | Dma2 | Dma3 => { // any memory
-                self.source.set(addr & 0x0FFF_FFFF);
-            }
-        }
+        self.source.set(map_addr(self.unit, addr));
     }
 
     pub fn write_dest(&mut self, addr: u32) {
-        match self.unit {
-            Dma0 | Dma1 | Dma2 => { // internal memory only
-                self.dest.set(addr & 0x07FF_FFFF);
-            }
-            Dma3 => { // any memory
-                self.dest.set(addr & 0x0FFF_FFFF);
-            }
-        }
+        self.dest.set(map_addr(self.unit, addr));
     }
+
+    pub fn write_source_lo(&mut self, addr: u16) { write_latched_lo(self.unit, &mut self.source, addr); }
+    pub fn write_source_hi(&mut self, addr: u16) { write_latched_hi(self.unit, &mut self.source, addr); }
+    pub fn write_dest_lo(&mut self, addr: u16) { write_latched_lo(self.unit, &mut self.dest, addr); }
+    pub fn write_dest_hi(&mut self, addr: u16) { write_latched_hi(self.unit, &mut self.dest, addr); }
 
     pub fn write_word_count(&mut self, count: u16) {
         // A word count of 0 is treated as the maximum value.

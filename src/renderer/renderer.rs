@@ -4,6 +4,7 @@ use log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
 use super::mode0;
 use super::FrameBuffer;
+use utils::sign_extend;
 
 const ADDR_UPPER_MASK: u32 = 0xFF00_0000;
 
@@ -70,6 +71,14 @@ pub struct Background {
     pub dmy: u16,
 }
 
+fn write_offset_lo(offset: &mut u32, value: u16) {
+    *offset = (*offset & !0xFFFF) | (value as u32) << 16;
+}
+
+fn write_offset_hi(offset: &mut u32, value: u16) {
+    *offset = (*offset & 0xFFFF) | sign_extend(value as u32, 12) << 16;
+}
+
 impl Background {
     pub fn get_size(&self) -> (usize, usize) {
         match self.screen_size {
@@ -89,6 +98,11 @@ impl Background {
             _ => unreachable!()
         }
     }
+
+    pub fn write_xcoord_lo(&mut self, value: u16) { write_offset_lo(&mut self.x_ref, value); }
+    pub fn write_xcoord_hi(&mut self, value: u16) { write_offset_hi(&mut self.x_ref, value); }
+    pub fn write_ycoord_lo(&mut self, value: u16) { write_offset_lo(&mut self.y_ref, value); }
+    pub fn write_ycoord_hi(&mut self, value: u16) { write_offset_hi(&mut self.y_ref, value); }
 }
 
 #[derive(Clone)]

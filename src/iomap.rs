@@ -1,100 +1,128 @@
 use interconnect::{ Interconnect, IrqFlags, WaitStateControlReg, SoundPWMControlReg };
-use log;
 use log::*;
-use utils::{ Cycle, sign_extend };
+use utils::Cycle;
 
 macro_rules! unreadable {
-    ($kind:expr, $reg:expr) => {
-        |_ic: &Interconnect| {
-            let reg_name = stringify!($reg);
-            warn!($kind, "Tried to read the write-only {} (at 0x{:X}).", reg_name, $reg);
-            0
-        }
-    }
+    ($kind:expr, $reg:expr) => {{
+        warn!($kind, "Tried to read the write-only {} (at 0x{:X}).", stringify!($reg), $reg);
+        0
+    }}
 }
 
 macro_rules! unwriteable {
-    ($kind:expr, $reg:expr) => {
-        |_ic: &mut Interconnect, value| {
-            let reg_name = stringify!($reg);
-            warn!($kind, "Tried to write {:X} to read-only {} (at 0x{:X})", value, reg_name, $reg);
-        }
+    ($kind:expr, $reg:expr, $value:expr) => {
+        warn!($kind, "Tried to write {:X} to read-only {} (at 0x{:X})", $value, stringify!($reg), $reg);
     }
 }
 
-macro_rules! read_stub {
-    () => {
-        |_ic: &Interconnect| {
+pub fn read16(ic: &Interconnect, addr: u32) -> u16 {
+    match addr & !1 {
+        REG_DISPCNT => ic.renderer.read_dispcnt(),
+        REG_DISPSTAT => ic.renderer.read_dispstat(),
+        REG_SOUNDBIAS => ic.sound_bias.into(),
+        REG_IE => ic.interrupt_enable.bits(),
+        REG_IF => ic.interrupt_flags.bits(),
+        REG_WAITCNT => {
+            warn!(IO, "Reading stubbed WAITCNT");
+            0
+        }
+        REG_IME => ic.master_interrupt_enable as u16,
+        // REG_POSTFLG | REG_HALTCNT
+        REG_POSTFLG => (ic.post_boot_flag as u16) | (0u16 << 8),
+        REG_VCOUNT => ic.renderer.scanline as u16,
+
+        REG_BG0CNT => ic.renderer.read_bgcnt(0),
+        REG_BG1CNT => ic.renderer.read_bgcnt(1),
+        REG_BG2CNT => ic.renderer.read_bgcnt(2),
+        REG_BG3CNT => ic.renderer.read_bgcnt(3),
+
+        REG_BG0HOFS => unreadable!(GPU, REG_BG0HOFS),
+        REG_BG0VOFS => unreadable!(GPU, REG_BG0VOFS),
+        REG_BG1HOFS => unreadable!(GPU, REG_BG1HOFS),
+        REG_BG1VOFS => unreadable!(GPU, REG_BG1VOFS),
+        REG_BG2HOFS => unreadable!(GPU, REG_BG2HOFS),
+        REG_BG2VOFS => unreadable!(GPU, REG_BG2VOFS),
+        REG_BG3HOFS => unreadable!(GPU, REG_BG3HOFS),
+        REG_BG3VOFS => unreadable!(GPU, REG_BG3VOFS),
+
+        REG_BG2PA => unreadable!(GPU, REG_BG2PA),
+        REG_BG2PB => unreadable!(GPU, REG_BG2PB),
+        REG_BG2PC => unreadable!(GPU, REG_BG2PC),
+        REG_BG2PD => unreadable!(GPU, REG_BG2PD),
+        REG_BG2X_LO => unreadable!(GPU, REG_BG2X_LO),
+        REG_BG2X_HI => unreadable!(GPU, REG_BG2X_HI),
+        REG_BG2Y_LO => unreadable!(GPU, REG_BG2Y_LO),
+        REG_BG2Y_HI => unreadable!(GPU, REG_BG2Y_HI),
+
+        REG_BG3PA => unreadable!(GPU, REG_BG2PA),
+        REG_BG3PB => unreadable!(GPU, REG_BG2PB),
+        REG_BG3PC => unreadable!(GPU, REG_BG2PC),
+        REG_BG3PD => unreadable!(GPU, REG_BG2PD),
+        REG_BG3X_LO => unreadable!(GPU, REG_BG2X_LO),
+        REG_BG3X_HI => unreadable!(GPU, REG_BG2X_HI),
+        REG_BG3Y_LO => unreadable!(GPU, REG_BG2Y_LO),
+        REG_BG3Y_HI => unreadable!(GPU, REG_BG2Y_HI),
+
+        REG_TM0CNT_L => ic.timers[0].get_current_value(ic.cycles),
+        REG_TM1CNT_L => ic.timers[1].get_current_value(ic.cycles),
+        REG_TM2CNT_L => ic.timers[2].get_current_value(ic.cycles),
+        REG_TM3CNT_L => ic.timers[3].get_current_value(ic.cycles),
+
+        REG_TM0CNT_H => ic.timers[0].read_control(),
+        REG_TM1CNT_H => ic.timers[1].read_control(),
+        REG_TM2CNT_H => ic.timers[2].read_control(),
+        REG_TM3CNT_H => ic.timers[3].read_control(),
+
+        REG_DMA0SAD_LO => unreadable!(DMA0, REG_DMA0SAD_LO),
+        REG_DMA0SAD_HI => unreadable!(DMA0, REG_DMA0SAD_HI),
+        REG_DMA1SAD_LO => unreadable!(DMA1, REG_DMA1SAD_LO),
+        REG_DMA1SAD_HI => unreadable!(DMA1, REG_DMA1SAD_HI),
+        REG_DMA2SAD_LO => unreadable!(DMA2, REG_DMA2SAD_LO),
+        REG_DMA2SAD_HI => unreadable!(DMA2, REG_DMA2SAD_HI),
+        REG_DMA3SAD_LO => unreadable!(DMA3, REG_DMA3SAD_LO),
+        REG_DMA3SAD_HI => unreadable!(DMA3, REG_DMA3SAD_HI),
+
+        REG_DMA0DAD_LO => unreadable!(DMA0, REG_DMA0DAD_LO),
+        REG_DMA0DAD_HI => unreadable!(DMA0, REG_DMA0DAD_HI),
+        REG_DMA1DAD_LO => unreadable!(DMA1, REG_DMA1DAD_LO),
+        REG_DMA1DAD_HI => unreadable!(DMA1, REG_DMA1DAD_HI),
+        REG_DMA2DAD_LO => unreadable!(DMA2, REG_DMA2DAD_LO),
+        REG_DMA2DAD_HI => unreadable!(DMA2, REG_DMA2DAD_HI),
+        REG_DMA3DAD_LO => unreadable!(DMA3, REG_DMA3DAD_LO),
+        REG_DMA3DAD_HI => unreadable!(DMA3, REG_DMA3DAD_HI),
+
+        REG_DMA0CNT_L => unreadable!(DMA0, REG_DMA0CNT_L),
+        REG_DMA1CNT_L => unreadable!(DMA1, REG_DMA1CNT_L),
+        REG_DMA2CNT_L => unreadable!(DMA2, REG_DMA2CNT_L),
+        REG_DMA3CNT_L => unreadable!(DMA3, REG_DMA3CNT_L),
+
+        REG_DMA0CNT_H => ic.dma[0].read_control(),
+        REG_DMA1CNT_H => ic.dma[1].read_control(),
+        REG_DMA2CNT_H => ic.dma[2].read_control(),
+        REG_DMA3CNT_H => ic.dma[3].read_control(),
+
+        _ => {
             print!("(STUB) ");
             0
         }
     }
 }
 
-macro_rules! write_stub {
-    () => {
-        |_ic: &mut Interconnect, _value| {
-            print!("(STUB) ");
-        }
-    }
-}
-
-impl_io_map! {
-//    [Interconnect]
-    (u16, REG_DISPCNT) {
-        read => |ic: &Interconnect| {
-            ic.renderer.read_dispcnt()
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.renderer.write_dispcnt(value);
-        }
-    }
-
-    (u16, REG_DISPSTAT) {
-        read => |ic: &Interconnect| {
-            ic.renderer.read_dispstat()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.renderer.write_dispstat(value);
-        }
-    }
-
-    (u16, REG_SOUNDBIAS) {
-        read => |ic: &Interconnect| {
-            ic.sound_bias.into()
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.sound_bias = SoundPWMControlReg::from(value);
-        }
-    }
-
-    (u16, REG_IE) {
-        read => |ic: &Interconnect| {
-            ic.interrupt_enable.bits()
-        },
-        write => |ic: &mut Interconnect, value: u16| {
+pub fn write16(ic: &mut Interconnect, addr: u32, value: u16) {
+    match addr & !1 {
+        REG_DISPCNT => ic.renderer.write_dispcnt(value),
+        REG_DISPSTAT => ic.renderer.write_dispstat(value),
+        REG_SOUNDBIAS => ic.sound_bias = SoundPWMControlReg::from(value),
+        REG_IE => {
             ic.interrupt_enable = IrqFlags::from_bits_truncate(value);
             trace!(CPU, "Setting interrupt_enable = {:?}", ic.interrupt_enable);
         }
-    }
-
-    (u16, REG_IF) {
-        read => |ic: &Interconnect| {
-            ic.interrupt_flags.bits()
-        },
-        write => |ic: &mut Interconnect, value: u16| {
+        REG_IF => {
             let value = IrqFlags::from_bits_truncate(value);
             ic.interrupt_flags.remove(value);
             trace!(CPU, "Setting interrupt_flags = {:?}", ic.interrupt_flags);
         }
-    }
-
-    (u16, REG_WAITCNT) {
-        read => |_ic: &Interconnect| {
-            warn!(IO, "Reading stubbed WAITCNT");
-            0
-        },
-        write => |ic: &mut Interconnect, value| {
+        REG_WAITCNT => {
             let ctrl = WaitStateControlReg::from(value);
             ic.sram_wait_control = Cycle([4, 3, 2, 8][ctrl.sram_wait_control]);
             ic.gamepak.wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
@@ -105,383 +133,116 @@ impl_io_map! {
             ic.gamepak.wait_states[2].seq = Cycle([8, 1][ctrl.wait_state_2_seq]);
             ic.gamepak_prefetch_buffer = ctrl.gamepak_prefetch_buffer;
         }
-    }
-
-    (u16, REG_IME) {
-        read => |ic: &Interconnect| {
-            ic.master_interrupt_enable as u16
-        },
-        write => |ic: &mut Interconnect, value| {
+        REG_IME => {
             trace!(CPU, "Setting master_interrupt_enable = {}", ic.master_interrupt_enable);
             ic.master_interrupt_enable = (value & 1) != 0;
         }
-    }
+        // TODO: REG_HALTCNT
+        REG_POSTFLG => ic.post_boot_flag = value != 0,
+        REG_VCOUNT => unwriteable!(GPU, REG_VCOUNT, value),
 
-    (u8, REG_POSTFLG) {
-        read => |ic: &Interconnect| {
-            ic.post_boot_flag as u8
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.post_boot_flag = value != 0;
-        }
-    }
+        REG_BG0CNT => ic.renderer.write_bgcnt(0, value),
+        REG_BG1CNT => ic.renderer.write_bgcnt(1, value),
+        REG_BG2CNT => ic.renderer.write_bgcnt(2, value),
+        REG_BG3CNT => ic.renderer.write_bgcnt(3, value),
 
-    (u16, REG_VCOUNT) {
-        read => |ic: &Interconnect| {
-            ic.renderer.scanline as u16
-        },
-        write => unwriteable!(GPU, REG_VCOUNT)
-    }
+        REG_BG0HOFS => ic.renderer.bg[0].x_offset = value & 0x1FF,
+        REG_BG0VOFS => ic.renderer.bg[0].y_offset = value & 0x1FF,
+        REG_BG1HOFS => ic.renderer.bg[1].x_offset = value & 0x1FF,
+        REG_BG1VOFS => ic.renderer.bg[1].y_offset = value & 0x1FF,
+        REG_BG2HOFS => ic.renderer.bg[2].x_offset = value & 0x1FF,
+        REG_BG2VOFS => ic.renderer.bg[2].y_offset = value & 0x1FF,
+        REG_BG3HOFS => ic.renderer.bg[3].x_offset = value & 0x1FF,
+        REG_BG3VOFS => ic.renderer.bg[3].y_offset = value & 0x1FF,
 
-    (u16, REG_BG0CNT ) { // 2    R/W   BG0 Control
-        read => |ic: &Interconnect| {
-            ic.renderer.read_bgcnt(0)
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.renderer.write_bgcnt(0, value)
-        }
-    }
-    (u16, REG_BG1CNT ) { // 2    R/W   BG1 Control
-        read => |ic: &Interconnect| {
-            ic.renderer.read_bgcnt(1)
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.renderer.write_bgcnt(1, value)
-        }
-    }
-    (u16, REG_BG2CNT ) { // 2    R/W   BG2 Control
-        read => |ic: &Interconnect| {
-            ic.renderer.read_bgcnt(2)
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.renderer.write_bgcnt(2, value)
-        }
-    }
-    (u16, REG_BG3CNT ) { // 2    R/W   BG3 Control
-        read => |ic: &Interconnect| {
-            ic.renderer.read_bgcnt(3)
-        },
-        write => |ic: &mut Interconnect, value: u16| {
-            ic.renderer.write_bgcnt(3, value)
-        }
-    }
+        REG_BG2PA => ic.renderer.bg[2].dx = value,
+        REG_BG2PB => ic.renderer.bg[2].dmx = value,
+        REG_BG2PC => ic.renderer.bg[2].dy = value,
+        REG_BG2PD => ic.renderer.bg[2].dmy = value,
+        REG_BG2X_LO => ic.renderer.bg[2].write_xcoord_lo(value),
+        REG_BG2X_HI => ic.renderer.bg[2].write_xcoord_hi(value),
+        REG_BG2Y_LO => ic.renderer.bg[2].write_ycoord_lo(value),
+        REG_BG2Y_HI => ic.renderer.bg[2].write_ycoord_hi(value),
 
-    (u16, REG_BG0HOFS) { // 2    W     BG0 X-Offset
-        read => unreadable!(GPU, REG_BG0HOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[0].x_offset = value & 0x1FF
-    }
-    (u16, REG_BG0VOFS) { // 2    W     BG0 Y-Offset
-        read => unreadable!(GPU, REG_BG0VOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[0].y_offset = value & 0x1FF
-    }
-    (u16, REG_BG1HOFS) { // 2    W     BG1 X-Offset
-        read => unreadable!(GPU, REG_BG1HOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[1].x_offset = value & 0x1FF
-    }
-    (u16, REG_BG1VOFS) { // 2    W     BG1 Y-Offset
-        read => unreadable!(GPU, REG_BG1VOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[1].y_offset = value & 0x1FF
-    }
-    (u16, REG_BG2HOFS) { // 2    W     BG2 X-Offset
-        read => unreadable!(GPU, REG_BG2HOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].x_offset = value & 0x1FF
-    }
-    (u16, REG_BG2VOFS) { // 2    W     BG2 Y-Offset
-        read => unreadable!(GPU, REG_BG2VOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].y_offset = value & 0x1FF
-    }
-    (u16, REG_BG3HOFS) { // 2    W     BG3 X-Offset
-        read => unreadable!(GPU, REG_BG3HOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].x_offset = value & 0x1FF
-    }
-    (u16, REG_BG3VOFS) { // 2    W     BG3 Y-Offset
-        read => unreadable!(GPU, REG_BG3VOFS),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].y_offset = value & 0x1FF
-    }
+        REG_BG3PA => ic.renderer.bg[3].dx = value,
+        REG_BG3PB => ic.renderer.bg[3].dmx = value,
+        REG_BG3PC => ic.renderer.bg[3].dy = value,
+        REG_BG3PD => ic.renderer.bg[3].dmy = value,
+        REG_BG3X_LO => ic.renderer.bg[3].write_xcoord_lo(value),
+        REG_BG3X_HI => ic.renderer.bg[3].write_xcoord_hi(value),
+        REG_BG3Y_LO => ic.renderer.bg[3].write_ycoord_lo(value),
+        REG_BG3Y_HI => ic.renderer.bg[3].write_ycoord_hi(value),
 
-    (u16, REG_BG2PA  ) { // 2    W     BG2 Rotation/Scaling Parameter A (dx)
-        read => unreadable!(GPU, REG_BG2PA),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dx = value
-    }
-    (u16, REG_BG2PB  ) { // 2    W     BG2 Rotation/Scaling Parameter B (dmx)
-        read => unreadable!(GPU, REG_BG2PB),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dmx = value
-    }
-    (u16, REG_BG2PC  ) { // 2    W     BG2 Rotation/Scaling Parameter C (dy)
-        read => unreadable!(GPU, REG_BG2PC),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dy = value
-    }
-    (u16, REG_BG2PD  ) { // 2    W     BG2 Rotation/Scaling Parameter D (dmy)
-        read => unreadable!(GPU, REG_BG2PD),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[2].dmy = value
-    }
-    (u32, REG_BG2X   ) { // 4    W     BG2 Reference Point X-Coordinate
-        read => unreadable!(GPU, REG_BG2X),
-        write => |ic: &mut Interconnect, value| {
-            ic.renderer.bg[2].x_ref = sign_extend(value, 28);
-        }
-    }
-    (u32, REG_BG2Y   ) { // 4    W     BG2 Reference Point Y-Coordinate
-        read => unreadable!(GPU, REG_BG2Y),
-        write => |ic: &mut Interconnect, value| {
-            ic.renderer.bg[2].y_ref = sign_extend(value, 28);
-        }
-    }
+        REG_TM0CNT_L => ic.timers[0].set_reload_value(value),
+        REG_TM1CNT_L => ic.timers[1].set_reload_value(value),
+        REG_TM2CNT_L => ic.timers[2].set_reload_value(value),
+        REG_TM3CNT_L => ic.timers[3].set_reload_value(value),
 
-    (u16, REG_BG3PA  ) { // 2    W     BG3 Rotation/Scaling Parameter A (dx)
-        read => unreadable!(GPU, REG_BG3PA),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dx = value
-    }
-    (u16, REG_BG3PB  ) { // 2    W     BG3 Rotation/Scaling Parameter B (dmx)
-        read => unreadable!(GPU, REG_BG3PB),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dmx = value
-    }
-    (u16, REG_BG3PC  ) { // 2    W     BG3 Rotation/Scaling Parameter C (dy)
-        read => unreadable!(GPU, REG_BG3PC),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dy = value
-    }
-    (u16, REG_BG3PD  ) { // 2    W     BG3 Rotation/Scaling Parameter D (dmy)
-        read => unreadable!(GPU, REG_BG3PD),
-        write => |ic: &mut Interconnect, value| ic.renderer.bg[3].dmy = value
-    }
-    (u32, REG_BG3X   ) { // 4    W     BG3 Reference Point X-Coordinate
-        read => unreadable!(GPU, REG_BG3X),
-        write => |ic: &mut Interconnect, value| {
-            ic.renderer.bg[3].x_ref = sign_extend(value, 28);
-        }
-    }
-    (u32, REG_BG3Y   ) { // 4    W     BG3 Reference Point Y-Coordinate
-        read => unreadable!(GPU, REG_BG3Y),
-        write => |ic: &mut Interconnect, value| {
-            ic.renderer.bg[3].y_ref = sign_extend(value, 28);
-        }
-    }
+        REG_TM0CNT_H => ic.timers[0].write_control(ic.cycles, value),
+        REG_TM1CNT_H => ic.timers[1].write_control(ic.cycles, value),
+        REG_TM2CNT_H => ic.timers[2].write_control(ic.cycles, value),
+        REG_TM3CNT_H => ic.timers[3].write_control(ic.cycles, value),
 
-    (u16, REG_TM0CNT_L) {
-        read => |ic: &Interconnect| {
-            ic.timers[0].get_current_value(ic.cycles)
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[0].set_reload_value(value);
-        }
-    }
-    (u16, REG_TM1CNT_L) {
-        read => |ic: &Interconnect| {
-            ic.timers[1].get_current_value(ic.cycles)
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[1].set_reload_value(value);
-        }
-    }
-    (u16, REG_TM2CNT_L) {
-        read => |ic: &Interconnect| {
-            ic.timers[2].get_current_value(ic.cycles)
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[2].set_reload_value(value);
-        }
-    }
-    (u16, REG_TM3CNT_L) {
-        read => |ic: &Interconnect| {
-            ic.timers[3].get_current_value(ic.cycles)
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[3].set_reload_value(value);
-        }
-    }
+        REG_DMA0SAD_LO => ic.dma[0].write_source_lo(value),
+        REG_DMA0SAD_HI => ic.dma[0].write_source_hi(value),
+        REG_DMA1SAD_LO => ic.dma[1].write_source_lo(value),
+        REG_DMA1SAD_HI => ic.dma[1].write_source_hi(value),
+        REG_DMA2SAD_LO => ic.dma[2].write_source_lo(value),
+        REG_DMA2SAD_HI => ic.dma[2].write_source_hi(value),
+        REG_DMA3SAD_LO => ic.dma[3].write_source_lo(value),
+        REG_DMA3SAD_HI => ic.dma[3].write_source_hi(value),
 
-    (u16, REG_TM0CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.timers[0].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[0].write_control(ic.cycles, value);
-        }
-    }
-    (u16, REG_TM1CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.timers[1].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[1].write_control(ic.cycles, value);
-        }
-    }
-    (u16, REG_TM2CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.timers[2].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[2].write_control(ic.cycles, value);
-        }
-    }
-    (u16, REG_TM3CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.timers[3].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.timers[3].write_control(ic.cycles, value);
-        }
-    }
+        REG_DMA0DAD_LO => ic.dma[0].write_dest_lo(value),
+        REG_DMA0DAD_HI => ic.dma[0].write_dest_hi(value),
+        REG_DMA1DAD_LO => ic.dma[1].write_dest_lo(value),
+        REG_DMA1DAD_HI => ic.dma[1].write_dest_hi(value),
+        REG_DMA2DAD_LO => ic.dma[2].write_dest_lo(value),
+        REG_DMA2DAD_HI => ic.dma[2].write_dest_hi(value),
+        REG_DMA3DAD_LO => ic.dma[3].write_dest_lo(value),
+        REG_DMA3DAD_HI => ic.dma[3].write_dest_hi(value),
 
-    (u32, REG_DMA0SAD) {
-        read => unreadable!(log::DMA0, REG_DMA0SAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[0].write_source(value);
-        }
-    }
-    (u32, REG_DMA1SAD) {
-        read => unreadable!(log::DMA1, REG_DMA1SAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[1].write_source(value);
-        }
-    }
-    (u32, REG_DMA2SAD) {
-        read => unreadable!(log::DMA2, REG_DMA2SAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[2].write_source(value);
-        }
-    }
-    (u32, REG_DMA3SAD) {
-        read => unreadable!(log::DMA3, REG_DMA3SAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[3].write_source(value);
-        }
-    }
+        REG_DMA0CNT_L => ic.dma[0].write_word_count(value),
+        REG_DMA1CNT_L => ic.dma[1].write_word_count(value),
+        REG_DMA2CNT_L => ic.dma[2].write_word_count(value),
+        REG_DMA3CNT_L => ic.dma[3].write_word_count(value),
 
-    (u32, REG_DMA0DAD) {
-        read => unreadable!(log::DMA0, REG_DMA0DAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[0].write_dest(value);
-        }
-    }
-    (u32, REG_DMA1DAD) {
-        read => unreadable!(log::DMA1, REG_DMA1DAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[1].write_dest(value);
-        }
-    }
-    (u32, REG_DMA2DAD) {
-        read => unreadable!(log::DMA2, REG_DMA2DAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[2].write_dest(value);
-        }
-    }
-    (u32, REG_DMA3DAD) {
-        read => unreadable!(log::DMA3, REG_DMA3DAD),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[3].write_dest(value);
-        }
-    }
+        REG_DMA0CNT_H => ic.dma[0].write_control(value),
+        REG_DMA1CNT_H => ic.dma[1].write_control(value),
+        REG_DMA2CNT_H => ic.dma[2].write_control(value),
+        REG_DMA3CNT_H => ic.dma[3].write_control(value),
 
-    (u16, REG_DMA0CNT_L) {
-        read => unreadable!(log::DMA0, REG_DMA0CNT_L),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[0].write_word_count(value);
+        _ => {
+            print!("(STUB) ");
         }
     }
-    (u16, REG_DMA1CNT_L) {
-        read => unreadable!(log::DMA1, REG_DMA1CNT_L),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[1].write_word_count(value);
-        }
-    }
-    (u16, REG_DMA2CNT_L) {
-        read => unreadable!(log::DMA2, REG_DMA2CNT_L),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[2].write_word_count(value);
-        }
-    }
-    (u16, REG_DMA3CNT_L) {
-        read => unreadable!(log::DMA3, REG_DMA3CNT_L),
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[3].write_word_count(value);
-        }
-    }
+}
 
-    (u16, REG_DMA0CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.dma[0].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[0].write_control(value);
-        }
-    }
-    (u16, REG_DMA1CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.dma[1].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[1].write_control(value);
-        }
-    }
-    (u16, REG_DMA2CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.dma[2].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[2].write_control(value);
-        }
-    }
-    (u16, REG_DMA3CNT_H) {
-        read => |ic: &Interconnect| {
-            ic.dma[3].read_control()
-        },
-        write => |ic: &mut Interconnect, value| {
-            ic.dma[3].write_control(value);
-        }
-    }
+pub fn read8(ic: &Interconnect, addr: u32) -> u8 {
+    let half = read16(ic, addr & !1);
+    (if addr & 1 == 0 {
+        half
+    } else {
+        half >> 8
+    }) as u8
+}
 
-    (u16, REG_GREENSWAP   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WIN0H       ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WIN1H       ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WIN0V       ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WIN1V       ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WININ       ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WINOUT      ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_MOSAIC      ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_BLDCNT      ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_BLDALPHA    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_BLDY        ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND1CNT_L ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND1CNT_H ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND1CNT_X ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND2CNT_L ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND2CNT_H ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND3CNT_L ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND3CNT_H ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND3CNT_X ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND4CNT_L ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUND4CNT_H ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUNDCNT_L  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUNDCNT_H  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SOUNDCNT_X  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_0  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_1  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_2  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_3  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_4  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_5  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_6  ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_WAVE_RAM_7  ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_FIFO_A      ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_FIFO_B      ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_SIODATA32   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOMULTI0   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOMULTI1   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOMULTI2   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOMULTI3   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOCNT      ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIOMLT_SEND ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_SIODATA8    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_KEYINPUT    ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_KEYCNT      ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_RCNT        ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_IR          ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_JOYCNT      ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_JOY_RECV    ) { read => read_stub!(), write => write_stub!() }
-    (u32, REG_JOY_TRANS   ) { read => read_stub!(), write => write_stub!() }
-    (u16, REG_JOYSTAT     ) { read => read_stub!(), write => write_stub!() }
-    (u8,  REG_HALTCNT     ) { read => read_stub!(), write => write_stub!() }
+pub fn read32(ic: &Interconnect, addr: u32) -> u32 {
+    (read16(ic, addr) as u32) | (read16(ic, addr + 2) as u32) << 16
+}
+
+pub fn write8(ic: &mut Interconnect, addr: u32, value: u8) {
+    let half = read16(ic, addr & !1);
+    let writeback = if addr & 1 == 0 {
+        (half & !0xFF) | (value as u16)
+    } else {
+        (half & 0xFF) | (value as u16) << 8
+    };
+    write16(ic, addr, writeback);
+}
+
+pub fn write32(ic: &mut Interconnect, addr: u32, value: u32) {
+    write16(ic, addr, value as u16);
+    write16(ic, addr + 2, (value >> 16) as u16)
 }
 
 const REG_DISPCNT: u32 = 0x4000000;     // 2    R/W   LCD Control
@@ -504,14 +265,18 @@ const REG_BG2PA: u32 = 0x4000020;       // 2    W     BG2 Rotation/Scaling Param
 const REG_BG2PB: u32 = 0x4000022;       // 2    W     BG2 Rotation/Scaling Parameter B (dmx)
 const REG_BG2PC: u32 = 0x4000024;       // 2    W     BG2 Rotation/Scaling Parameter C (dy)
 const REG_BG2PD: u32 = 0x4000026;       // 2    W     BG2 Rotation/Scaling Parameter D (dmy)
-const REG_BG2X: u32 = 0x4000028;        // 4    W     BG2 Reference Point X-Coordinate
-const REG_BG2Y: u32 = 0x400002C;        // 4    W     BG2 Reference Point Y-Coordinate
+const REG_BG2X_LO: u32 = 0x4000028;     // 4    W     BG2 Reference Point X-Coordinate
+const REG_BG2X_HI: u32 = 0x400002A;
+const REG_BG2Y_LO: u32 = 0x400002C;     // 4    W     BG2 Reference Point Y-Coordinate
+const REG_BG2Y_HI: u32 = 0x400002E;
 const REG_BG3PA: u32 = 0x4000030;       // 2    W     BG3 Rotation/Scaling Parameter A (dx)
 const REG_BG3PB: u32 = 0x4000032;       // 2    W     BG3 Rotation/Scaling Parameter B (dmx)
 const REG_BG3PC: u32 = 0x4000034;       // 2    W     BG3 Rotation/Scaling Parameter C (dy)
 const REG_BG3PD: u32 = 0x4000036;       // 2    W     BG3 Rotation/Scaling Parameter D (dmy)
-const REG_BG3X: u32 = 0x4000038;        // 4    W     BG3 Reference Point X-Coordinate
-const REG_BG3Y: u32 = 0x400003C;        // 4    W     BG3 Reference Point Y-Coordinate
+const REG_BG3X_LO: u32 = 0x4000038;     // 4    W     BG3 Reference Point X-Coordinate
+const REG_BG3X_HI: u32 = 0x400003A;
+const REG_BG3Y_LO: u32 = 0x400003C;     // 4    W     BG3 Reference Point Y-Coordinate
+const REG_BG3Y_HI: u32 = 0x400003E;
 const REG_WIN0H: u32 = 0x4000040;       // 2    W     Window 0 Horizontal Dimensions
 const REG_WIN1H: u32 = 0x4000042;       // 2    W     Window 1 Horizontal Dimensions
 const REG_WIN0V: u32 = 0x4000044;       // 2    W     Window 0 Vertical Dimensions
@@ -547,20 +312,28 @@ const REG_WAVE_RAM_6: u32 = 0x400009C;
 const REG_WAVE_RAM_7: u32 = 0x400009E;
 const REG_FIFO_A: u32 = 0x40000A0;      // 4    W     Channel A FIFO, Data 0-3
 const REG_FIFO_B: u32 = 0x40000A4;      // 4    W     Channel B FIFO, Data 0-3
-const REG_DMA0SAD: u32 = 0x40000B0;     // 4    W     DMA 0 Source Address
-const REG_DMA0DAD: u32 = 0x40000B4;     // 4    W     DMA 0 Destination Address
+const REG_DMA0SAD_LO: u32 = 0x40000B0;  // 4    W     DMA 0 Source Address
+const REG_DMA0SAD_HI: u32 = 0x40000B2;
+const REG_DMA0DAD_LO: u32 = 0x40000B4;  // 4    W     DMA 0 Destination Address
+const REG_DMA0DAD_HI: u32 = 0x40000B6;
 const REG_DMA0CNT_L: u32 = 0x40000B8;   // 2    W     DMA 0 Word Count
 const REG_DMA0CNT_H: u32 = 0x40000BA;   // 2    R/W   DMA 0 Control
-const REG_DMA1SAD: u32 = 0x40000BC;     // 4    W     DMA 1 Source Address
-const REG_DMA1DAD: u32 = 0x40000C0;     // 4    W     DMA 1 Destination Address
+const REG_DMA1SAD_LO: u32 = 0x40000BC;  // 4    W     DMA 1 Source Address
+const REG_DMA1SAD_HI: u32 = 0x40000BE;
+const REG_DMA1DAD_LO: u32 = 0x40000C0;  // 4    W     DMA 1 Destination Address
+const REG_DMA1DAD_HI: u32 = 0x40000C2;
 const REG_DMA1CNT_L: u32 = 0x40000C4;   // 2    W     DMA 1 Word Count
 const REG_DMA1CNT_H: u32 = 0x40000C6;   // 2    R/W   DMA 1 Control
-const REG_DMA2SAD: u32 = 0x40000C8;     // 4    W     DMA 2 Source Address
-const REG_DMA2DAD: u32 = 0x40000CC;     // 4    W     DMA 2 Destination Address
+const REG_DMA2SAD_LO: u32 = 0x40000C8;  // 4    W     DMA 2 Source Address
+const REG_DMA2SAD_HI: u32 = 0x40000CA;
+const REG_DMA2DAD_LO: u32 = 0x40000CC;  // 4    W     DMA 2 Destination Address
+const REG_DMA2DAD_HI: u32 = 0x40000CE;
 const REG_DMA2CNT_L: u32 = 0x40000D0;   // 2    W     DMA 2 Word Count
 const REG_DMA2CNT_H: u32 = 0x40000D2;   // 2    R/W   DMA 2 Control
-const REG_DMA3SAD: u32 = 0x40000D4;     // 4    W     DMA 3 Source Address
-const REG_DMA3DAD: u32 = 0x40000D8;     // 4    W     DMA 3 Destination Address
+const REG_DMA3SAD_LO: u32 = 0x40000D4;  // 4    W     DMA 3 Source Address
+const REG_DMA3SAD_HI: u32 = 0x40000D6;
+const REG_DMA3DAD_LO: u32 = 0x40000D8;  // 4    W     DMA 3 Destination Address
+const REG_DMA3DAD_HI: u32 = 0x40000DA;
 const REG_DMA3CNT_L: u32 = 0x40000DC;   // 2    W     DMA 3 Word Count
 const REG_DMA3CNT_H: u32 = 0x40000DE;   // 2    R/W   DMA 3 Control
 const REG_TM0CNT_L: u32 = 0x4000100;    // 2    R/W   Timer 0 Counter/Reload
