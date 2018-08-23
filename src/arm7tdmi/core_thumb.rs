@@ -32,12 +32,18 @@ impl ThumbOp {
     fn hrs(&self) -> usize { self.field(3, 4) }
     fn hrd(&self) -> usize { self.field::<usize>(0, 3) | (self.field::<usize>(8, 1) << 3) }
 
+    pub fn discriminant(&self) -> u32 { self.field(6, 10) }
+
     fn get_rd(&self) -> &'static str {
         REG_NAMES[self.field::<usize>(0, 3)]
     }
 }
 
 pub type ThumbEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ThumbOp);
+
+pub fn thumb_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ThumbOp) {
+    arm.signal_undef(interconnect);
+}
 
 fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     where F: FnOnce(&mut Arm7TDMI, u32, u32) -> u32

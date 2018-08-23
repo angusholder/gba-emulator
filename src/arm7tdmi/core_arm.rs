@@ -28,6 +28,7 @@ impl ArmOp {
 
     fn reg(&self, offset: u32) -> usize { self.field(offset, 4) as usize }
     fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
+    pub fn discriminant(&self) -> u32 { self.field(4, 4) | self.field(20, 8) << 8 }
 }
 
 pub type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
@@ -40,7 +41,7 @@ fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp)
     arm.signal_undef(interconnect);
 }
 
-fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
+pub fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
     arm.signal_undef(interconnect);
 }
 
@@ -690,12 +691,11 @@ pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
 
     ("0001 0010 1111 1111 1111 0001 nnnn", "BX* %Rn", op_bx),
     ("0001 0s00 1111 dddd 0000 0000 0000", "MRS* %Rd, %Ps", op_mrs_reg),
-    ("0001 0d10 1001 1111 0000 0000 mmmm", "MSR* %Pd, %Rm", op_msr_reg),
-    ("0001 0d10 1000 1111 0000 0000 mmmm", "MSR* %Pd_flg, %Rm", op_msr_reg),
+    ("0001 0d10 100f 1111 0000 0000 mmmm", "MSR* %Pd<flg>, %Rm", op_msr_reg),
     ("0011 0d10 1000 1111 rrrr iiii iiii", "MSR* %Pd_flg, <rot_imm>", op_msr_flag_imm),
     ("0001 0000 nnnn dddd 0000 1001 mmmm", "SWP* %Rd, %Rm [%Rn]", op_swp),
     ("0001 0100 nnnn dddd 0000 1001 mmmm", "SWPB* %Rd, %Rm [%Rn]", op_swpb),
-    ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
+//    ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
 
     ("1000 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIA<S>* %Rn<wb>, { %+Rr }",
         |arm, ic, op| block_data_transfer(arm, ic, op, ldmia)

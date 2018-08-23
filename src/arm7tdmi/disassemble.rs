@@ -8,6 +8,14 @@ use std::fmt::Write;
 use regex::Captures;
 
 use arm7tdmi::{ REG_LR, REG_PC };
+use arm7tdmi::core_thumb::ThumbOp;
+use arm7tdmi::core_arm::ArmOp;
+use arm7tdmi::core_thumb::ThumbEmuFn;
+use arm7tdmi::core_arm::ArmEmuFn;
+use arm7tdmi::core_arm::op_und;
+use arm7tdmi::core_arm::ARM_DISPATCH_TABLE;
+use arm7tdmi::core_thumb::THUMB_DISPATCH_TABLE;
+use arm7tdmi::core_thumb::thumb_und;
 
 type DisResult<T> = Result<T, Box<StdError>>;
 
@@ -231,12 +239,14 @@ enum Bit {
     AtLeastASingleZero, // v
 }
 
-fn process_arm(fmt: &str) -> DisResult<Vec<Bit>> {
+fn process_arm(fmt: &str, exec: ArmEmuFn) -> DisResult<ArmEnc> {
     process(fmt, |i| 4 <= i && i < 8 || 20 <= i && i < 28)
+        .map(|bits| ArmEnc(bits, exec))
 }
 
-fn process_thumb(fmt: &str) -> DisResult<Vec<Bit>> {
+fn process_thumb(fmt: &str, exec: ThumbEmuFn) -> DisResult<ThumbEnc> {
     process(fmt, |i| 6 <= i && i < 16)
+        .map(|bits| ThumbEnc(bits, exec))
 }
 
 fn process(fmt: &str, accept_index: fn(usize) -> bool) -> DisResult<Vec<Bit>> {
@@ -260,21 +270,160 @@ fn parse_spec_char(c: char) -> DisResult<Bit> {
     })
 }
 
+struct ArmEnc(Vec<Bit>, ArmEmuFn);
+
+impl ArmEnc {
+    fn try_match(&self, op: ArmOp) -> Option<ArmEmuFn> {
+        self.try_match_discriminant(op.discriminant())
+    }
+
+    fn try_match_discriminant(&self, discriminant: u32) -> Option<ArmEmuFn> {
+        if encoding_matches(&self.0, discriminant) {
+            Some(self.1)
+        } else {
+            None
+        }
+    }
+}
+
+struct ThumbEnc(Vec<Bit>, ThumbEmuFn);
+
+impl ThumbEnc {
+    fn try_match(&self, op: ThumbOp) -> Option<ThumbEmuFn> {
+        self.try_match_discriminant(op.discriminant())
+    }
+
+    fn try_match_discriminant(&self, discriminant: u32) -> Option<ThumbEmuFn> {
+        if encoding_matches(&self.0, discriminant) {
+            Some(self.1)
+        } else {
+            None
+        }
+    }
+}
+
+fn encoding_matches(bits: &[Bit], discriminant: u32) -> bool {
+    let mut saw_a_one: Option<bool> = None;
+    let mut saw_a_zero: Option<bool> = None;
+
+    for (i, expect) in bits.iter().enumerate() {
+        let bit = (discriminant >> i) & 1;
+        match expect {
+            Bit::Zero => if bit != 0 { return false; },
+            Bit::One => if bit != 1 { return false },
+            Bit::AtLeastASingleZero => {
+                if saw_a_zero == None { saw_a_zero = Some(false); }
+                if bit == 0 {
+                    saw_a_zero = Some(true);
+                }
+            }
+            Bit::AtLeastASingleOne => {
+                if saw_a_one == None { saw_a_one = Some(false); }
+                if bit == 1 {
+                    saw_a_one = Some(true);
+                }
+            }
+            Bit::Any => {}
+        }
+    }
+
+    if saw_a_one == Some(false) || saw_a_zero == Some(false) {
+        false
+    } else {
+        true
+    }
+}
+
+pub struct ArmEncTable {
+    level1: Vec<u8>,
+    level2: Vec<ArmEmuFn>,
+}
+
+impl ArmEncTable {
+    pub fn new() -> ArmEncTable {
+        let arm_encodings = ARM_DISPATCH_TABLE.iter()
+            .map(|&(spec, _, exec)| process_arm(spec, exec))
+            .collect::<DisResult<Vec<ArmEnc>>>().unwrap();
+
+        let mut arm_fns = Vec::<ArmEmuFn>::new();
+
+        let arm_fn_indices = (0..=0xFFF).map(|discriminant| {
+            let encs = arm_encodings.iter()
+                .filter_map(|enc| enc.try_match_discriminant(discriminant))
+                .collect::<Vec<ArmEmuFn>>();
+
+            let enc: ArmEmuFn = match encs.len() {
+                0 => Ok(op_und as ArmEmuFn),
+                1 => Ok(encs[0]),
+                _ => Err(err(format!("More than 1 encoding matched discriminant {:03X}", discriminant))),
+            }?;
+
+            Ok(arm_fns.iter()
+                .position(|&e| (e as usize) == (enc as usize))
+                .unwrap_or_else(|| {
+                    arm_fns.push(enc);
+                    arm_fns.len() - 1
+                }) as u8)
+        }).collect::<DisResult<Vec<u8>>>().unwrap();
+
+        ArmEncTable { level1: arm_fn_indices, level2: arm_fns }
+    }
+
+    pub fn lookup(&self, op: ArmOp) -> ArmEmuFn {
+        let discr = op.discriminant();
+        let l2_index = self.level1[discr as usize];
+        self.level2[l2_index as usize]
+    }
+}
+
+pub struct ThumbEncTable {
+    level1: Vec<u8>,
+    level2: Vec<ThumbEmuFn>,
+}
+
+impl ThumbEncTable {
+    pub fn new() -> ThumbEncTable {
+        let thumb_encodings = THUMB_DISPATCH_TABLE.iter()
+            .map(|&(spec, _, exec)| process_thumb(spec, exec))
+            .collect::<DisResult<Vec<ThumbEnc>>>().unwrap();
+
+        let mut thumb_fns = Vec::<ThumbEmuFn>::new();
+
+        let thumb_fn_indices = (0..=0b1111_1111_11).map(|discriminant| {
+            let encs = thumb_encodings.iter()
+                .filter_map(|enc| enc.try_match_discriminant(discriminant))
+                .collect::<Vec<ThumbEmuFn>>();
+
+            let enc: ThumbEmuFn = match encs.len() {
+                0 => Ok(thumb_und as ThumbEmuFn),
+                1 => Ok(encs[0]),
+                _ => Err(err(format!("More than 1 encoding matched discriminant {:03X}", discriminant))),
+            }?;
+
+            Ok(thumb_fns.iter()
+                .position(|&e| (e as usize) == (enc as usize))
+                .unwrap_or_else(|| {
+                    thumb_fns.push(enc);
+                    thumb_fns.len() - 1
+                }) as u8)
+        }).collect::<DisResult<Vec<u8>>>().unwrap();
+
+        ThumbEncTable { level1: thumb_fn_indices, level2: thumb_fns }
+    }
+
+    pub fn lookup(&self, op: ThumbOp) -> ThumbEmuFn {
+        let discr = op.discriminant();
+        let l2_index = self.level1[discr as usize];
+        self.level2[l2_index as usize]
+    }
+}
+
 #[test]
-fn parse_core_dispatch_tables() {
-    use arm7tdmi::{
-        core_arm::{ ARM_DISPATCH_TABLE, ArmEmuFn },
-        core_thumb::{ THUMB_DISPATCH_TABLE, ThumbEmuFn },
-    };
+fn parse_arm_dispatch_table() {
+    ArmEncTable::new();
+}
 
-//    ARM_DISPATCH_TABLE.iter()
-//        .map(|(spec, _, exec)| process_arm(spec).map(|bits| (bits, exec)))
-//        .collect::<DisResult<(Vec<Bit>, ArmEmuFn)>>();
-    for (spec, disasm, exec) in ARM_DISPATCH_TABLE {
-        process_arm(spec).unwrap();
-    }
-
-    for (spec, disasm, exec) in THUMB_DISPATCH_TABLE {
-        process_thumb(spec).unwrap();
-    }
+#[test]
+fn parse_thumb_dispatch_table() {
+    ThumbEncTable::new();
 }
