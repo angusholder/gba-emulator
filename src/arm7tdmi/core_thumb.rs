@@ -5,11 +5,11 @@ use num::NumCast;
 use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
+use arm7tdmi::disassemble::{ DisResult, err };
 
-pub fn step_thumb(_arm: &mut Arm7TDMI, _interconnect: &mut Interconnect, op: u16) -> StepEvent {
-    let _discr = (op >> 6) as usize;
+pub fn step_thumb(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) -> StepEvent {
+    arm.thumb_enc_table.lookup(op)(arm, ic, op);
     StepEvent::None
-//    THUMB_LUT[discr](arm, interconnect, op)
 }
 
 static REG_NAMES: [&str; 16] = [
@@ -17,9 +17,14 @@ static REG_NAMES: [&str; 16] = [
     "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
 ];
 
+#[derive(Clone, Copy)]
 pub struct ThumbOp(u16);
 
 impl ThumbOp {
+    pub fn new(bits: u16) -> ThumbOp {
+        ThumbOp(bits)
+    }
+
     fn field<T: NumCast>(&self, offset: u16, width: u16) -> T {
         let mask = (1 << width) - 1;
         T::from((self.0 >> offset) & mask).unwrap()
@@ -578,3 +583,72 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 ];
+
+fn process_thumb(fmt: &str, exec: ThumbEmuFn) -> DisResult<ThumbEnc> {
+    process_bit_format(fmt, |i| 6 <= i && i < 16)
+        .map(|bits| ThumbEnc(bits, exec))
+}
+
+struct ThumbEnc(Vec<Bit>, ThumbEmuFn);
+
+impl ThumbEnc {
+    fn try_match(&self, op: ThumbOp) -> Option<ThumbEmuFn> {
+        self.try_match_discriminant(op.discriminant())
+    }
+
+    fn try_match_discriminant(&self, discriminant: u32) -> Option<ThumbEmuFn> {
+        if encoding_matches(&self.0, discriminant) {
+            Some(self.1)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ThumbEncTable {
+    level1: Vec<u8>,
+    level2: Vec<ThumbEmuFn>,
+}
+
+impl ThumbEncTable {
+    pub fn new() -> ThumbEncTable {
+        let thumb_encodings = THUMB_DISPATCH_TABLE.iter()
+            .map(|&(spec, _, exec)| process_thumb(spec, exec))
+            .collect::<DisResult<Vec<ThumbEnc>>>().unwrap();
+
+        let mut thumb_fns = Vec::<ThumbEmuFn>::new();
+
+        let thumb_fn_indices = (0..=0b1111_1111_11).map(|discriminant| {
+            let encs = thumb_encodings.iter()
+                .filter_map(|enc| enc.try_match_discriminant(discriminant))
+                .collect::<Vec<ThumbEmuFn>>();
+
+            let enc: ThumbEmuFn = match encs.len() {
+                0 => Ok(thumb_und as ThumbEmuFn),
+                1 => Ok(encs[0]),
+                _ => Err(err(format!("More than 1 encoding matched discriminant {:03X}", discriminant))),
+            }?;
+
+            Ok(thumb_fns.iter()
+                .position(|&e| (e as usize) == (enc as usize))
+                .unwrap_or_else(|| {
+                    thumb_fns.push(enc);
+                    thumb_fns.len() - 1
+                }) as u8)
+        }).collect::<DisResult<Vec<u8>>>().unwrap();
+
+        ThumbEncTable { level1: thumb_fn_indices, level2: thumb_fns }
+    }
+
+    pub fn lookup(&self, op: ThumbOp) -> ThumbEmuFn {
+        let discr = op.discriminant();
+        let l2_index = self.level1[discr as usize];
+        self.level2[l2_index as usize]
+    }
+}
+
+#[test]
+fn parse_thumb_dispatch_table() {
+    ThumbEncTable::new();
+}

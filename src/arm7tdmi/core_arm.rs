@@ -1,26 +1,29 @@
 use std::cmp;
 
-use num::FromPrimitive;
-
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
 use interconnect::Interconnect;
 use super::core_common::*;
 use log::*;
+use arm7tdmi::disassemble::{ DisResult, err };
 
-pub fn step_arm(arm: &mut Arm7TDMI, _interconnect: &mut Interconnect, op: u32) -> StepEvent {
-    let cond = ConditionCode::from_u32(op >> 28).unwrap();
-    if !arm.eval_condition_code(cond) {
-        return StepEvent::None;
+use num::FromPrimitive;
+
+pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+    if arm.eval_condition_code(op.cond()) {
+        arm.arm_enc_table.lookup(op)(arm, interconnect, op);
     }
 
-    let _discr = (op >> 4 & 0xF) | (op >> 16 & 0xFF0);
-//    ARM_LUT[discr as usize](arm, interconnect, op)
     StepEvent::None
 }
 
+#[derive(Clone, Copy)]
 pub struct ArmOp(u32);
 
 impl ArmOp {
+    pub fn new(bits: u32) -> ArmOp {
+        ArmOp(bits)
+    }
+
     fn field(&self, offset: u32, width: u32) -> u32 {
         let mask = (1 << width) - 1;
         (self.0 >> offset) & mask
@@ -29,6 +32,7 @@ impl ArmOp {
     fn reg(&self, offset: u32) -> usize { self.field(offset, 4) as usize }
     fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
     pub fn discriminant(&self) -> u32 { self.field(4, 4) | self.field(20, 8) << 8 }
+    pub fn cond(&self) -> ConditionCode { ConditionCode::from_u32(self.field(28, 4)).unwrap() }
 }
 
 pub type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
@@ -771,3 +775,72 @@ pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH* %Rd, [%Rn, #[i]]", sh_data_load::<i16>),
     ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH* %Rd, [%Rn, #[i]]", half_data_store),
 ];
+
+fn process_arm(fmt: &str, exec: ArmEmuFn) -> DisResult<ArmEnc> {
+    process_bit_format(fmt, |i| 4 <= i && i < 8 || 20 <= i && i < 28)
+        .map(|bits| ArmEnc(bits, exec))
+}
+
+struct ArmEnc(Vec<Bit>, ArmEmuFn);
+
+impl ArmEnc {
+    fn try_match(&self, op: ArmOp) -> Option<ArmEmuFn> {
+        self.try_match_discriminant(op.discriminant())
+    }
+
+    fn try_match_discriminant(&self, discriminant: u32) -> Option<ArmEmuFn> {
+        if encoding_matches(&self.0, discriminant) {
+            Some(self.1)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ArmEncTable {
+    level1: Vec<u8>,
+    level2: Vec<ArmEmuFn>,
+}
+
+impl ArmEncTable {
+    pub fn new() -> ArmEncTable {
+        let arm_encodings = ARM_DISPATCH_TABLE.iter()
+            .map(|&(spec, _, exec)| process_arm(spec, exec))
+            .collect::<DisResult<Vec<ArmEnc>>>().unwrap();
+
+        let mut arm_fns = Vec::<ArmEmuFn>::new();
+
+        let arm_fn_indices = (0..=0xFFF).map(|discriminant| {
+            let encs = arm_encodings.iter()
+                .filter_map(|enc| enc.try_match_discriminant(discriminant))
+                .collect::<Vec<ArmEmuFn>>();
+
+            let enc: ArmEmuFn = match encs.len() {
+                0 => Ok(op_und as ArmEmuFn),
+                1 => Ok(encs[0]),
+                _ => Err(err(format!("More than 1 encoding matched discriminant {:03X}", discriminant))),
+            }?;
+
+            Ok(arm_fns.iter()
+                .position(|&e| (e as usize) == (enc as usize))
+                .unwrap_or_else(|| {
+                    arm_fns.push(enc);
+                    arm_fns.len() - 1
+                }) as u8)
+        }).collect::<DisResult<Vec<u8>>>().unwrap();
+
+        ArmEncTable { level1: arm_fn_indices, level2: arm_fns }
+    }
+
+    pub fn lookup(&self, op: ArmOp) -> ArmEmuFn {
+        let discr = op.discriminant();
+        let l2_index = self.level1[discr as usize];
+        self.level2[l2_index as usize]
+    }
+}
+
+#[test]
+fn parse_arm_dispatch_table() {
+    ArmEncTable::new();
+}

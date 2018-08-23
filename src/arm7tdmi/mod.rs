@@ -10,6 +10,10 @@ use num::FromPrimitive;
 
 use interconnect::Interconnect;
 use utils::OrderedSet;
+use arm7tdmi::core_thumb::ThumbEncTable;
+use arm7tdmi::core_arm::ArmEncTable;
+use arm7tdmi::core_arm::ArmOp;
+use arm7tdmi::core_thumb::ThumbOp;
 
 enum_from_primitive! {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -205,6 +209,9 @@ pub struct Arm7TDMI {
     // For use by the debugger
     pub breakpoints: OrderedSet<u32>,
     pub watchpoints: OrderedSet<u32>,
+
+    arm_enc_table: ArmEncTable,
+    thumb_enc_table: ThumbEncTable,
 }
 
 impl fmt::Debug for Arm7TDMI {
@@ -241,6 +248,9 @@ impl Arm7TDMI {
 
             breakpoints: OrderedSet::new(),
             watchpoints: OrderedSet::new(),
+
+            arm_enc_table: ArmEncTable::new(),
+            thumb_enc_table: ThumbEncTable::new(),
         }
     }
 
@@ -421,9 +431,9 @@ impl Arm7TDMI {
         interconnect.prefetch[1] = next_op;
 
         if self.cpsr.thumb_mode {
-            step_thumb(self, interconnect, op as u16)
+            step_thumb(self, interconnect, ThumbOp::new(op as u16))
         } else {
-            step_arm(self, interconnect, op)
+            step_arm(self, interconnect, ArmOp::new(op))
         }
     }
 }

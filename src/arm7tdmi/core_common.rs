@@ -1,5 +1,7 @@
 use super::Arm7TDMI;
 pub use utils::sign_extend;
+use arm7tdmi::disassemble::DisResult;
+use arm7tdmi::disassemble::err;
 
 macro_rules! check_watchpoint {
     ($arm:expr, $addr:expr) => {
@@ -166,4 +168,65 @@ pub mod store {
     impl Store for u8  { const STORE: StoreFn<Self> = Interconnect::write8; }
     impl Store for u16 { const STORE: StoreFn<Self> = Interconnect::write16; }
     impl Store for u32 { const STORE: StoreFn<Self> = Interconnect::write32; }
+}
+
+pub enum Bit {
+    Any,
+    Zero, // 0
+    One, // 1
+    AtLeastASingleOne, // ^
+    AtLeastASingleZero, // v
+}
+
+pub(super) fn process_bit_format(fmt: &str, accept_index: fn(usize) -> bool) -> DisResult<Vec<Bit>> {
+    fmt.chars()
+        .filter(|&c| !c.is_whitespace())
+        .rev()
+        .enumerate()
+        .filter(|&(i, _)| accept_index(i))
+        .map(|(_, c)| parse_spec_char(c))
+        .collect::<DisResult<Vec<Bit>>>()
+}
+
+pub(super) fn parse_spec_char(c: char) -> DisResult<Bit> {
+    Ok(match c {
+        '0' => Bit::Zero,
+        '1' => Bit::One,
+        '^' => Bit::AtLeastASingleOne,
+        'v' => Bit::AtLeastASingleZero,
+        'i' | 's' | 'n' | 'd' | 'o' | 'b' | 'l' | 'j' | 'h' | 'r' | 'S' | 'W' | 'U' | 'N' | 'L' | 'P' | 'c' | 'p' | 'm' | '_' | 'I' => Bit::Any,
+        _ => return Err(err(format!("Unrecognised format spec character '{}'", c)))
+    })
+}
+
+pub(super) fn encoding_matches(bits: &[Bit], discriminant: u32) -> bool {
+    let mut saw_a_one: Option<bool> = None;
+    let mut saw_a_zero: Option<bool> = None;
+
+    for (i, expect) in bits.iter().enumerate() {
+        let bit = (discriminant >> i) & 1;
+        match expect {
+            Bit::Zero => if bit != 0 { return false; },
+            Bit::One => if bit != 1 { return false },
+            Bit::AtLeastASingleZero => {
+                if saw_a_zero == None { saw_a_zero = Some(false); }
+                if bit == 0 {
+                    saw_a_zero = Some(true);
+                }
+            }
+            Bit::AtLeastASingleOne => {
+                if saw_a_one == None { saw_a_one = Some(false); }
+                if bit == 1 {
+                    saw_a_one = Some(true);
+                }
+            }
+            Bit::Any => {}
+        }
+    }
+
+    if saw_a_one == Some(false) || saw_a_zero == Some(false) {
+        false
+    } else {
+        true
+    }
 }
