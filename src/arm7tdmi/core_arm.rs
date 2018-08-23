@@ -1,6 +1,6 @@
 use std::cmp;
 
-use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode, StepEvent };
+use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode };
 use interconnect::Interconnect;
 use super::core_common::*;
 use log::*;
@@ -8,12 +8,10 @@ use arm7tdmi::disassemble::{ DisResult, err };
 
 use num::FromPrimitive;
 
-pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) -> StepEvent {
+pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if arm.eval_condition_code(op.cond()) {
         arm.arm_enc_table.lookup(op)(arm, interconnect, op);
     }
-
-    StepEvent::None
 }
 
 #[derive(Clone, Copy)]

@@ -410,13 +410,13 @@ impl Arm7TDMI {
         self.regs[REG_PC] - self.get_op_size()
     }
 
-    pub fn step(&mut self, interconnect: &mut Interconnect) -> StepEvent {
+    pub fn step(&mut self, interconnect: &mut Interconnect) {
         use self::core_thumb::step_thumb;
         use self::core_arm::step_arm;
 
-        if self.breakpoints.contains(self.current_pc()) {
-            return StepEvent::TriggerBreakpoint(self.current_pc());
-        }
+//        if self.breakpoints.contains(self.current_pc()) {
+//            return StepEvent::TriggerBreakpoint(self.current_pc());
+//        }
 
         self.regs[REG_PC] += self.get_op_size();
 

@@ -2,14 +2,13 @@ use std::mem::size_of;
 
 use num::NumCast;
 
-use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI, StepEvent };
+use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI };
 use interconnect::Interconnect;
 use super::core_common::*;
 use arm7tdmi::disassemble::{ DisResult, err };
 
-pub fn step_thumb(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) -> StepEvent {
+pub fn step_thumb(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
     arm.thumb_enc_table.lookup(op)(arm, ic, op);
-    StepEvent::None
 }
 
 static REG_NAMES: [&str; 16] = [

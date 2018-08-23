@@ -239,7 +239,9 @@ impl Debugger {
     }
 
     fn step(&mut self, print_state: bool) -> bool {
-        let event = self.interconnect.step(&mut self.arm, &mut self.buffer);
+        self.interconnect.step(&mut self.arm, &mut self.buffer);
+
+        let event = StepEvent::None;
         if print_state {
             println!("{:?}\n", self.arm);
         }

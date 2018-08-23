@@ -4,7 +4,7 @@ use dma::{ Dma, DmaUnit, step_dma_units, dma_on_vblank, dma_on_hblank };
 use timer::{ Timer, TimerUnit, step_timers };
 use gamepak::GamePak;
 use log::*;
-use arm7tdmi::{ Arm7TDMI, StepEvent };
+use arm7tdmi::Arm7TDMI;
 use iomap;
 use std::fmt::UpperHex;
 
@@ -125,7 +125,7 @@ impl Interconnect {
         }
     }
 
-    pub fn step(&mut self, arm: &mut Arm7TDMI, buffer: &mut FrameBuffer) -> StepEvent {
+    pub fn step(&mut self, arm: &mut Arm7TDMI, buffer: &mut FrameBuffer) {
         let mut flags = IrqFlags::empty();
 
         let start_cycle = self.cycles;
@@ -134,10 +134,7 @@ impl Interconnect {
         if let Some(flag) = step_dma_units(self) {
             flags |= flag;
         } else {
-            let event = arm.step(self);
-            if event != StepEvent::None {
-                return event;
-            }
+            arm.step(self);
         }
 
         let current_cycle = self.cycles;
@@ -157,8 +154,6 @@ impl Interconnect {
             self.interrupt_flags.insert(masked);
             arm.signal_irq(self);
         }
-
-        StepEvent::None
     }
 
     pub fn add_internal_cycles(&mut self, cycles: i64) {
