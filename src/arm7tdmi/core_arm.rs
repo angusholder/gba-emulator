@@ -18,7 +18,7 @@ pub fn step_arm(arm: &mut Arm7TDMI, _interconnect: &mut Interconnect, op: u32) -
     StepEvent::None
 }
 
-struct ArmOp(u32);
+pub struct ArmOp(u32);
 
 impl ArmOp {
     fn field(&self, offset: u32, width: u32) -> u32 {
@@ -30,7 +30,7 @@ impl ArmOp {
     fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
 }
 
-type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
+pub type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
 
 fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) {
     error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
@@ -679,7 +679,7 @@ fn half_data_store(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     }
 }
 
-static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
+pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("0000 000S dddd nnnn ssss 1001 mmmm", "MUL*<S> %Rd, %Rm, %Rs", mul),
     ("0000 001S dddd nnnn ssss 1001 mmmm", "MLA*<S> %Rd, %Rm, %Rs, %Rn", mul),
 

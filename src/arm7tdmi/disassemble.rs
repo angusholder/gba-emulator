@@ -222,3 +222,59 @@ fn disassemble(word: u32, address: u32, ops: &[FormatOp], output: &mut Write) ->
     }
     Ok(())
 }
+
+enum Bit {
+    Any,
+    Zero, // 0
+    One, // 1
+    AtLeastASingleOne, // ^
+    AtLeastASingleZero, // v
+}
+
+fn process_arm(fmt: &str) -> DisResult<Vec<Bit>> {
+    process(fmt, |i| 4 <= i && i < 8 || 20 <= i && i < 28)
+}
+
+fn process_thumb(fmt: &str) -> DisResult<Vec<Bit>> {
+    process(fmt, |i| 6 <= i && i < 16)
+}
+
+fn process(fmt: &str, accept_index: fn(usize) -> bool) -> DisResult<Vec<Bit>> {
+    fmt.chars()
+        .filter(|&c| !c.is_whitespace())
+        .rev()
+        .enumerate()
+        .filter(|&(i, _)| accept_index(i))
+        .map(|(_, c)| parse_spec_char(c))
+        .collect::<DisResult<Vec<Bit>>>()
+}
+
+fn parse_spec_char(c: char) -> DisResult<Bit> {
+    Ok(match c {
+        '0' => Bit::Zero,
+        '1' => Bit::One,
+        '^' => Bit::AtLeastASingleOne,
+        'v' => Bit::AtLeastASingleZero,
+        'i' | 's' | 'n' | 'd' | 'o' | 'b' | 'l' | 'j' | 'h' | 'r' | 'S' | 'W' | 'U' | 'N' | 'L' | 'P' | 'c' | 'p' | 'm' | '_' | 'I' => Bit::Any,
+        _ => return Err(err(format!("Unrecognised format spec character '{}'", c)))
+    })
+}
+
+#[test]
+fn parse_core_dispatch_tables() {
+    use arm7tdmi::{
+        core_arm::{ ARM_DISPATCH_TABLE, ArmEmuFn },
+        core_thumb::{ THUMB_DISPATCH_TABLE, ThumbEmuFn },
+    };
+
+//    ARM_DISPATCH_TABLE.iter()
+//        .map(|(spec, _, exec)| process_arm(spec).map(|bits| (bits, exec)))
+//        .collect::<DisResult<(Vec<Bit>, ArmEmuFn)>>();
+    for (spec, disasm, exec) in ARM_DISPATCH_TABLE {
+        process_arm(spec).unwrap();
+    }
+
+    for (spec, disasm, exec) in THUMB_DISPATCH_TABLE {
+        process_thumb(spec).unwrap();
+    }
+}

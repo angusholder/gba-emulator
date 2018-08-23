@@ -17,7 +17,7 @@ static REG_NAMES: [&str; 16] = [
     "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
 ];
 
-struct ThumbOp(u16);
+pub struct ThumbOp(u16);
 
 impl ThumbOp {
     fn field<T: NumCast>(&self, offset: u16, width: u16) -> T {
@@ -37,7 +37,7 @@ impl ThumbOp {
     }
 }
 
-type ThumbEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ThumbOp);
+pub type ThumbEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ThumbOp);
 
 fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     where F: FnOnce(&mut Arm7TDMI, u32, u32) -> u32
@@ -250,9 +250,9 @@ mod alu2 {
 }
 
 /// Legend:
-/// [isndob] can be anything
+/// [isndobljhrSWUNLPcpm] can be anything
 /// At least one of the bits marked as ^ must be 1
-static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
+pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
     ("000 00 iiiii sss ddd", "LSL %Rd, %Rs, #shamt[i]",
         |arm, _, op| {
             shift_imm(arm, op, barrel_shift_lsl_set_flags);
