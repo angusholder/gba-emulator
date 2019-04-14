@@ -441,12 +441,12 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
     ("1011 0000 0iiiiiii", "ADD SP, #imm[i]",
         |arm, _, op| {
-            arm.regs[REG_SP] += op.imm8();
+            arm.regs[REG_SP] += op.imm8() << 2;
         }
     ),
     ("1011 0000 1iiiiiii", "ADD SP, -#imm[i]",
         |arm, _, op| {
-            arm.regs[REG_SP] -= op.imm8() & !0x80;
+            arm.regs[REG_SP] -= (op.imm8() & !0x80) << 2;
         }
     ),
 
