@@ -113,12 +113,14 @@ fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     arm.regs[rd_index] = value;
 }
 
+// TODO: Split this into one function per entry in the ARM PDF, it's confusing currently
+//       and I can't be sure it's correct.
 fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     if op.field(8, 12) & !0x100 != 0b1000_1111_0000 {
         return op_und(arm, interconnect, op);
     }
 
-    let flags = op.flag(16);
+    let flags_only = !op.flag(16);
 
     let rm_index = op.reg(0);
     let pd = op.flag(22);
@@ -127,7 +129,7 @@ fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
 
     let rm = arm.regs[rm_index];
 
-    match (pd, flags) {
+    match (pd, flags_only) {
         (false, true) => arm.cpsr.set_flags_from_bits(rm),
         (false, false) => arm.set_cpsr_from_bits(rm),
         (true, true) => {
