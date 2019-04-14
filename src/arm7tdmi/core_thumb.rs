@@ -49,9 +49,7 @@ pub fn thumb_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ThumbOp
     arm.signal_undef(interconnect);
 }
 
-fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: FnOnce(&mut Arm7TDMI, u32, u32) -> u32
-{
+fn shift_imm(arm: &mut Arm7TDMI, op: ThumbOp, f: impl FnOnce(&mut Arm7TDMI, u32, u32) -> u32) {
     let rs = arm.regs[op.reg3(3)];
     let imm = op.imm5(6);
     let result = f(arm, rs, imm);
@@ -59,9 +57,7 @@ fn shift_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     arm.regs[op.reg3(0)] = result;
 }
 
-fn alu3_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: FnOnce(u32, u32) -> u32
-{
+fn alu3_reg(arm: &mut Arm7TDMI, op: ThumbOp, f: impl FnOnce(u32, u32) -> u32) {
     let rs = arm.regs[op.reg3(3)];
     let rn = arm.regs[op.reg3(6)];
     let result = f(rs, rn);
@@ -70,9 +66,7 @@ fn alu3_reg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     arm.regs[op.reg3(0)] = result;
 }
 
-fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: FnOnce(u32, u32) -> u32
-{
+fn alu3_imm(arm: &mut Arm7TDMI, op: ThumbOp, f: impl FnOnce(u32, u32) -> u32) {
     let rs = arm.regs[op.reg3(3)];
     let rn = op.imm3(6);
     let result = f(rs, rn);
@@ -81,107 +75,134 @@ fn alu3_imm<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
     arm.regs[op.reg3(0)] = result;
 }
 
-fn alu2_reg<T: alu2::Op>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+#[inline(always)]
+fn decode_alu2_reg(arm: &mut Arm7TDMI, op: ThumbOp) -> (usize, u32, u32) {
     let rd_index = op.reg3(0);
     let rd = arm.regs[rd_index];
     let rs = arm.regs[op.reg3(3)];
-    let opcode = op.field::<u16>(6, 4);
-
-    match opcode {
-        alu2::AND => {
-            let result = rd & rs;
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-        }
-        alu2::EOR => {
-            let result = rd ^ rs;
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-        }
-        alu2::LSL => {
-            let result = barrel_shift_lsl_set_flags(arm, rd, rs);
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-            ic.add_internal_cycles(1);
-        }
-        alu2::LSR => {
-            let result = barrel_shift_lsr_set_flags(arm, rd, rs);
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-            ic.add_internal_cycles(1);
-        }
-        alu2::ASR => {
-            let result = barrel_shift_asr_set_flags(arm, rd, rs);
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-            ic.add_internal_cycles(1);
-        }
-        alu2::ADC => {
-            let result = rd.wrapping_add(rs).wrapping_add(arm.cpsr.c as u32);
-            set_zn(arm, result);
-            add_set_vc(arm, rd, rs);
-            arm.regs[rd_index] = result;
-        }
-        alu2::SBC => {
-            let result = rs.wrapping_sub(rs).wrapping_sub(!arm.cpsr.c as u32);
-            set_zn(arm, result);
-            sub_set_vc(arm, rd, rs);
-            arm.regs[rd_index] = result;
-        }
-        alu2::ROR => {
-            let result = barrel_shift_ror_set_flags(arm, rd, rs);
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-            ic.add_internal_cycles(1);
-        }
-        alu2::TST => {
-            set_zn(arm, rd & rs);
-        }
-        alu2::NEG => {
-            let result = (rs as i32).wrapping_neg() as u32;
-            set_zn(arm, result);
-            sub_set_vc(arm, 0, rs);
-            arm.regs[rd_index] = result;
-        }
-        alu2::CMP => {
-            let result = rd.wrapping_sub(rs);
-            set_zn(arm, result);
-            sub_set_vc(arm, rd, rs);
-        }
-        alu2::CMN => {
-            let result = rs.wrapping_add(rd);
-            set_zn(arm, result);
-            add_set_vc(arm, rd, rs);
-        }
-        alu2::ORR => {
-            let result = rd | rs;
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-        }
-        alu2::MUL => {
-            let result = rd.wrapping_mul(rs);
-            set_zn(arm, result);
-            ic.add_internal_cycles((rs.leading_zeros() / 8) as _);
-            // MUL sets c and v to meaningless values, so we dont need to touch them.
-            arm.regs[rd_index] = result;
-        }
-        alu2::BIC => {
-            let result = rd & !rs;
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-        }
-        alu2::MVN => {
-            let result = !rs;
-            set_zn(arm, result);
-            arm.regs[rd_index] = result;
-        }
-        _ => unreachable!()
-    }
+    (rd_index, rd, rs)
 }
 
-fn alu2_hreg<F>(arm: &mut Arm7TDMI, op: ThumbOp, f: F)
-    where F: FnOnce(&mut Arm7TDMI, u32, u32, usize)
-{
+fn alu2_and(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd & rs;
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_eor(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd ^ rs;
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_lsl(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = barrel_shift_lsl_set_flags(arm, rd, rs);
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+    ic.add_internal_cycles(1);
+}
+
+fn alu2_lsr(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = barrel_shift_lsr_set_flags(arm, rd, rs);
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+    ic.add_internal_cycles(1);
+}
+
+fn alu2_asr(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = barrel_shift_asr_set_flags(arm, rd, rs);
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+    ic.add_internal_cycles(1);
+}
+
+fn alu2_adc(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd.wrapping_add(rs).wrapping_add(arm.cpsr.c as u32);
+    set_zn(arm, result);
+    add_set_vc(arm, rd, rs);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_sbc(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rs.wrapping_sub(rs).wrapping_sub(!arm.cpsr.c as u32);
+    set_zn(arm, result);
+    sub_set_vc(arm, rd, rs);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_ror(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = barrel_shift_ror_set_flags(arm, rd, rs);
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+    ic.add_internal_cycles(1);
+}
+
+fn alu2_tst(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (_, rd, rs) = decode_alu2_reg(arm, op);
+    set_zn(arm, rd & rs);
+}
+
+fn alu2_neg(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, _, rs) = decode_alu2_reg(arm, op);
+    let result = (rs as i32).wrapping_neg() as u32;
+    set_zn(arm, result);
+    sub_set_vc(arm, 0, rs);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_cmp(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (_, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd.wrapping_sub(rs);
+    set_zn(arm, result);
+    sub_set_vc(arm, rd, rs);
+}
+
+fn alu2_cmn(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (_, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rs.wrapping_add(rd);
+    set_zn(arm, result);
+    add_set_vc(arm, rd, rs);
+}
+
+fn alu2_orr(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd | rs;
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd.wrapping_mul(rs);
+    set_zn(arm, result);
+    ic.add_internal_cycles((rs.leading_zeros() / 8) as _);
+    // MUL sets c and v to meaningless values, so we dont need to touch them.
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_bic(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, rd, rs) = decode_alu2_reg(arm, op);
+    let result = rd & !rs;
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_mvn(arm: &mut Arm7TDMI, _ic: &mut Interconnect, op: ThumbOp) {
+    let (rd_index, _, rs) = decode_alu2_reg(arm, op);
+    let result = !rs;
+    set_zn(arm, result);
+    arm.regs[rd_index] = result;
+}
+
+fn alu2_hreg(arm: &mut Arm7TDMI, op: ThumbOp, f: impl FnOnce(&mut Arm7TDMI, u32, u32, usize)) {
     let rs = arm.regs[op.hrs()];
     let rd_index = op.hrd();
     let rd = arm.regs[rd_index];
@@ -234,29 +255,6 @@ fn branch_cc<COND: cond::Cond>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: Th
         let addr = arm.regs[REG_PC].wrapping_add(offset);
         arm.branch_to(ic, addr);
     }
-}
-
-mod alu2 {
-    pub trait Op {
-        const VAL: u16;
-    }
-
-    pub const AND: u16 = 0b0000; pub struct And; impl Op for And { const VAL: u16 = AND; }
-    pub const EOR: u16 = 0b0001; pub struct Eor; impl Op for Eor { const VAL: u16 = EOR; }
-    pub const LSL: u16 = 0b0010; pub struct Lsl; impl Op for Lsl { const VAL: u16 = LSL; }
-    pub const LSR: u16 = 0b0011; pub struct Lsr; impl Op for Lsr { const VAL: u16 = LSR; }
-    pub const ASR: u16 = 0b0100; pub struct Asr; impl Op for Asr { const VAL: u16 = ASR; }
-    pub const ADC: u16 = 0b0101; pub struct Adc; impl Op for Adc { const VAL: u16 = ADC; }
-    pub const SBC: u16 = 0b0110; pub struct Sbc; impl Op for Sbc { const VAL: u16 = SBC; }
-    pub const ROR: u16 = 0b0111; pub struct Ror; impl Op for Ror { const VAL: u16 = ROR; }
-    pub const TST: u16 = 0b1000; pub struct Tst; impl Op for Tst { const VAL: u16 = TST; }
-    pub const NEG: u16 = 0b1001; pub struct Neg; impl Op for Neg { const VAL: u16 = NEG; }
-    pub const CMP: u16 = 0b1010; pub struct Cmp; impl Op for Cmp { const VAL: u16 = CMP; }
-    pub const CMN: u16 = 0b1011; pub struct Cmn; impl Op for Cmn { const VAL: u16 = CMN; }
-    pub const ORR: u16 = 0b1100; pub struct Orr; impl Op for Orr { const VAL: u16 = ORR; }
-    pub const MUL: u16 = 0b1101; pub struct Mul; impl Op for Mul { const VAL: u16 = MUL; }
-    pub const BIC: u16 = 0b1110; pub struct Bic; impl Op for Bic { const VAL: u16 = BIC; }
-    pub const MVN: u16 = 0b1111; pub struct Mvn; impl Op for Mvn { const VAL: u16 = MVN; }
 }
 
 /// Legend:
@@ -339,22 +337,22 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
-    ("010000 0000 sss ddd", "AND %Rd, %Rs", alu2_reg::<alu2::And>),
-    ("010000 0001 sss ddd", "EOR %Rd, %Rs", alu2_reg::<alu2::Eor>),
-    ("010000 0010 sss ddd", "LSL %Rd, %Rs", alu2_reg::<alu2::Lsl>),
-    ("010000 0011 sss ddd", "LSR %Rd, %Rs", alu2_reg::<alu2::Lsr>),
-    ("010000 0100 sss ddd", "ASR %Rd, %Rs", alu2_reg::<alu2::Asr>),
-    ("010000 0101 sss ddd", "ADC %Rd, %Rs", alu2_reg::<alu2::Adc>),
-    ("010000 0110 sss ddd", "SBC %Rd, %Rs", alu2_reg::<alu2::Sbc>),
-    ("010000 0111 sss ddd", "ROR %Rd, %Rs", alu2_reg::<alu2::Ror>),
-    ("010000 1000 sss ddd", "TST %Rd, %Rs", alu2_reg::<alu2::Tst>),
-    ("010000 1001 sss ddd", "NEG %Rd, %Rs", alu2_reg::<alu2::Neg>),
-    ("010000 1010 sss ddd", "CMP %Rd, %Rs", alu2_reg::<alu2::Cmp>),
-    ("010000 1011 sss ddd", "CMN %Rd, %Rs", alu2_reg::<alu2::Cmn>),
-    ("010000 1100 sss ddd", "ORR %Rd, %Rs", alu2_reg::<alu2::Orr>),
-    ("010000 1101 sss ddd", "MUL %Rd, %Rs", alu2_reg::<alu2::Mul>),
-    ("010000 1110 sss ddd", "BIC %Rd, %Rs", alu2_reg::<alu2::Bic>),
-    ("010000 1111 sss ddd", "MVN %Rd, %Rs", alu2_reg::<alu2::Mvn>),
+    ("010000 0000 sss ddd", "AND %Rd, %Rs", alu2_and),
+    ("010000 0001 sss ddd", "EOR %Rd, %Rs", alu2_eor),
+    ("010000 0010 sss ddd", "LSL %Rd, %Rs", alu2_lsl),
+    ("010000 0011 sss ddd", "LSR %Rd, %Rs", alu2_lsr),
+    ("010000 0100 sss ddd", "ASR %Rd, %Rs", alu2_asr),
+    ("010000 0101 sss ddd", "ADC %Rd, %Rs", alu2_adc),
+    ("010000 0110 sss ddd", "SBC %Rd, %Rs", alu2_sbc),
+    ("010000 0111 sss ddd", "ROR %Rd, %Rs", alu2_ror),
+    ("010000 1000 sss ddd", "TST %Rd, %Rs", alu2_tst),
+    ("010000 1001 sss ddd", "NEG %Rd, %Rs", alu2_neg),
+    ("010000 1010 sss ddd", "CMP %Rd, %Rs", alu2_cmp),
+    ("010000 1011 sss ddd", "CMN %Rd, %Rs", alu2_cmn),
+    ("010000 1100 sss ddd", "ORR %Rd, %Rs", alu2_orr),
+    ("010000 1101 sss ddd", "MUL %Rd, %Rs", alu2_mul),
+    ("010000 1110 sss ddd", "BIC %Rd, %Rs", alu2_bic),
+    ("010000 1111 sss ddd", "MVN %Rd, %Rs", alu2_mvn),
 
     ("010001 00 ^^ sss ddd", "ADD %Hd, %Hs",
         |arm, ic, op| alu2_hreg(arm, op, |arm, rs, rd, rd_index| {
