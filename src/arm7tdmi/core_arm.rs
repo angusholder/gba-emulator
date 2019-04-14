@@ -423,7 +423,7 @@ fn branch(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let offset = op.field(0, 24);
     let link = op.flag(24);
 
-    let offset = sign_extend(offset, 24);
+    let offset = sign_extend(offset, 24) << 2;
 
     let pc = arm.regs[REG_PC];
     let addr = pc.wrapping_add(offset);
