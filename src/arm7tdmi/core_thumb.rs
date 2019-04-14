@@ -555,7 +555,7 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
     ("11100 jjjjjjjjjjj", "B $label[j]",
         |arm, ic, op| {
-            let offset = sign_extend(op.field(11, 11), 11) << 1;
+            let offset = sign_extend(op.field(0, 11), 11) << 1;
             let addr = arm.regs[REG_PC].wrapping_add(offset);
             arm.branch_to(ic, addr);
         }
@@ -563,14 +563,14 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
     ("11110 jjjjjjjjjjj", "BL $longlabel[j]",
         |arm, _, op| {
-            let hi_offset = sign_extend(op.field(11, 11), 11) << 12;
+            let hi_offset = sign_extend(op.field(0, 11), 11) << 12;
             arm.regs[REG_LR] = arm.regs[REG_PC].wrapping_add(hi_offset);
         }
     ),
 
     ("11111 jjjjjjjjjjj", "BLlow $label[j]",
         |arm, ic, op| {
-            let lo_offset = op.field::<u32>(11, 11) << 1;
+            let lo_offset = op.field::<u32>(0, 11) << 1;
             arm.regs[REG_LR] = arm.regs[REG_LR].wrapping_add(lo_offset);
             let temp = arm.regs[REG_PC];
             let target = arm.regs[REG_LR];
