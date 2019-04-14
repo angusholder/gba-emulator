@@ -591,7 +591,7 @@ fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect,
     let writeback = op.flag(21);
     let up = op.flag(23);
     let preindex = op.flag(24);
-    let imm = op.flag(25);
+    let imm = !op.flag(25);
 
     let rn = arm.regs[rn_index];
     let rd = arm.regs[rd_index];
