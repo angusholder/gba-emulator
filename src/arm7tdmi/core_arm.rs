@@ -29,7 +29,7 @@ impl ArmOp {
 
     fn reg(&self, offset: u32) -> usize { self.field(offset, 4) as usize }
     fn flag(&self, offset: u32) -> bool { self.field(offset, 1) != 0 }
-    pub fn discriminant(&self) -> u32 { self.field(4, 4) | self.field(20, 8) << 8 }
+    pub fn discriminant(&self) -> u32 { self.field(4, 4) | self.field(20, 8) << 4 }
     pub fn cond(&self) -> ConditionCode { ConditionCode::from_u32(self.field(28, 4)).unwrap() }
 }
 
