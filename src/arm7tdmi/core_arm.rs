@@ -557,7 +557,7 @@ fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op
     let writeback = op.flag(21);
     let up = op.flag(23);
     let preindex = op.flag(24);
-    let imm = op.flag(25);
+    let imm = !op.flag(25);
 
     let rn = arm.regs[rn_index];
 
@@ -753,15 +753,15 @@ pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("00I 1110 S nnnn dddd iiii viiv iiii", "BIC<S>* %Rd, %Rn, <op2>", data_processing),
     ("00I 1111 S nnnn dddd iiii viiv iiii", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
 
-    ("011P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, #offset[i]]", single_data_load::<u32>),
-    ("010P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, <op2_reg>]", single_data_load::<u32>),
-    ("011P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, #offset[i]]", single_data_load::<u8>),
-    ("010P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, <op2_reg>]", single_data_load::<u8>),
+    ("010P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, #offset[i]]", single_data_load::<u32>),
+    ("011P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, <op2_reg>]", single_data_load::<u32>),
+    ("010P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, #offset[i]]", single_data_load::<u8>),
+    ("011P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, <op2_reg>]", single_data_load::<u8>),
 
-    ("011P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, #offset[i]]", single_data_store::<u32>),
-    ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", single_data_store::<u32>),
-    ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
-    ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
+    ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, #offset[i]]", single_data_store::<u32>),
+    ("011P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", single_data_store::<u32>),
+    ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
+    ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
 
     ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH* %Rd, [%Rn, %Rm]", sh_data_load::<u16>),
     ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB* %Rd, [%Rn, %Rm]", sh_data_load::<i8>),
