@@ -430,7 +430,7 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
     ("1010 0 ddd iiiiiiii", "ADD %Rd, PC, #offset[i]",
         |arm, _, op| {
-            arm.regs[op.reg3(8)] = arm.regs[REG_PC] + (op.imm8() << 2);
+            arm.regs[op.reg3(8)] = (arm.regs[REG_PC] & !3) + (op.imm8() << 2);
         }
     ),
     ("1010 1 ddd iiiiiiii", "ADD %Rd, SP, #offset[i]",
