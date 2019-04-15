@@ -213,8 +213,8 @@ pub struct Arm7TDMI {
     pub breakpoints: OrderedSet<u32>,
     pub watchpoints: OrderedSet<u32>,
 
-    arm_enc_table: ArmEncTable,
-    thumb_enc_table: ThumbEncTable,
+    arm_enc_table: &'static ArmEncTable,
+    thumb_enc_table: &'static ThumbEncTable,
 }
 
 impl fmt::Debug for Arm7TDMI {
@@ -255,8 +255,8 @@ impl Arm7TDMI {
             breakpoints: OrderedSet::new(),
             watchpoints: OrderedSet::new(),
 
-            arm_enc_table: ArmEncTable::new(),
-            thumb_enc_table: ThumbEncTable::new(),
+            arm_enc_table: ArmEncTable::get_instance(),
+            thumb_enc_table: ThumbEncTable::get_instance(),
         }
     }
 

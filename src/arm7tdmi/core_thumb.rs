@@ -643,6 +643,10 @@ impl ThumbEnc {
     }
 }
 
+lazy_static! {
+    static ref TABLE: ThumbEncTable = ThumbEncTable::compute();
+}
+
 #[derive(Clone)]
 pub struct ThumbEncTable {
     level1: Vec<u8>,
@@ -650,7 +654,11 @@ pub struct ThumbEncTable {
 }
 
 impl ThumbEncTable {
-    pub fn new() -> ThumbEncTable {
+    pub fn get_instance() -> &'static ThumbEncTable {
+        &TABLE
+    }
+
+    fn compute() -> ThumbEncTable {
         let thumb_encodings = THUMB_DISPATCH_TABLE.iter()
             .map(|&(spec, _, exec)| process_thumb(spec, exec))
             .collect::<DisResult<Vec<ThumbEnc>>>().unwrap();
@@ -688,5 +696,6 @@ impl ThumbEncTable {
 
 #[test]
 fn parse_thumb_dispatch_table() {
-    ThumbEncTable::new();
+    // Force evaluation of the lazy_static
+    ThumbEncTable::get_instance();
 }

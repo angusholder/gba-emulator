@@ -843,6 +843,10 @@ impl ArmEnc {
     }
 }
 
+lazy_static! {
+    static ref TABLE: ArmEncTable = ArmEncTable::compute();
+}
+
 #[derive(Clone)]
 pub struct ArmEncTable {
     level1: Vec<u8>,
@@ -850,7 +854,11 @@ pub struct ArmEncTable {
 }
 
 impl ArmEncTable {
-    pub fn new() -> ArmEncTable {
+    pub fn get_instance() -> &'static ArmEncTable {
+        &TABLE
+    }
+
+    fn compute() -> ArmEncTable {
         let arm_encodings = ARM_DISPATCH_TABLE.iter()
             .map(|&(spec, _, exec)| process_arm(spec, exec))
             .collect::<DisResult<Vec<ArmEnc>>>().unwrap();
@@ -888,5 +896,6 @@ impl ArmEncTable {
 
 #[test]
 fn parse_arm_dispatch_table() {
-    ArmEncTable::new();
+    // Force evaluation of the lazy_static
+    ArmEncTable::get_instance();
 }
