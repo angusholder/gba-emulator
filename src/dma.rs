@@ -1,20 +1,17 @@
-use num::FromPrimitive;
+use num_traits::FromPrimitive;
 
 use crate::bus::Bus;
 use crate::gba::{Gba, IrqFlags };
 use crate::log::*;
 use crate::utils::Latched;
 
-enum_from_primitive! {
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Primitive)]
 enum DmaTransferType {
     U16 = 0,
     U32 = 1,
 }
-}
 
-enum_from_primitive! {
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Primitive)]
 enum DmaStartTiming {
     Immediately = 0,
     VBlank = 1,
@@ -23,10 +20,8 @@ enum DmaStartTiming {
     // DMA0=Prohibited, DMA1/DMA2=Sound FIFO, DMA3=Video Capture
     Special = 3,
 }
-}
 
-enum_from_primitive! {
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Primitive)]
 enum DmaAddrControl {
     Increment = 0,
     Decrement = 1,
@@ -34,7 +29,6 @@ enum DmaAddrControl {
 
     // Valid only for dest, not source.
     IncrementReload = 3,
-}
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

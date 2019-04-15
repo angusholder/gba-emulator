@@ -1,19 +1,17 @@
 use std::fmt;
 
-use num::FromPrimitive;
+use num_traits::FromPrimitive;
 
 use crate::utils::Cycle;
 use crate::gba::{Gba, IrqFlags };
 use crate::log::*;
 
-enum_from_primitive! {
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Primitive)]
 enum TimerScale {
     Div1 = 0,
     Div64 = 1,
     Div256 = 2,
     Div1024 = 3,
-}
 }
 
 impl fmt::Display for TimerScale {

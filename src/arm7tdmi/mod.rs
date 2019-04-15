@@ -6,7 +6,7 @@ mod disassemble;
 
 use std::fmt;
 
-use num::FromPrimitive;
+use num_traits::FromPrimitive;
 
 use crate::utils::OrderedSet;
 use crate::arm7tdmi::core_thumb::ThumbEncTable;
@@ -15,8 +15,7 @@ use crate::arm7tdmi::core_arm::ArmOp;
 use crate::arm7tdmi::core_thumb::ThumbOp;
 use crate::bus::BusPtr;
 
-enum_from_primitive! {
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Primitive)]
 pub enum ConditionCode {
     Eq = 0b0000, // Z=1:            equal
     Ne = 0b0001, // Z=0:            not equal
@@ -34,10 +33,8 @@ pub enum ConditionCode {
     Le = 0b1101, // Z=1 OR (N!=V):  less than or equal
     Al = 0b1110, // 1:              always
 }
-}
 
-enum_from_primitive! {
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Primitive)]
 pub enum OperatingMode {
     None       = 0b00000, // spsr.mode is set to 0 in bios
     User       = 0b10000,
@@ -45,7 +42,6 @@ pub enum OperatingMode {
     Supervisor = 0b10011,
     Undefined  = 0b11011,
     System     = 0b11111,
-}
 }
 
 impl fmt::Display for ConditionCode {

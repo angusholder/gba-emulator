@@ -5,7 +5,7 @@ use super::core_common::*;
 use crate::log::*;
 use crate::arm7tdmi::disassemble::{ DisResult, err };
 
-use num::FromPrimitive;
+use num_traits::FromPrimitive;
 use crate::bus::Bus;
 
 pub fn step_arm(arm: &mut Arm7TDMI, op: ArmOp) {

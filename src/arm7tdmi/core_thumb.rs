@@ -1,4 +1,4 @@
-use num::NumCast;
+use num_traits::NumCast;
 
 use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI };
 use super::core_common::*;

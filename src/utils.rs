@@ -3,7 +3,7 @@ use std::ops::{ Add, AddAssign, Sub, SubAssign };
 use std::fmt;
 use std::slice;
 
-use num::PrimInt;
+use num_traits::PrimInt;
 
 #[allow(unused_imports)]
 use crate::log::LogKind::*;

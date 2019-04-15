@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-extern crate num;
+extern crate num_traits;
 #[macro_use]
-extern crate enum_primitive;
+extern crate enum_primitive_derive;
 #[macro_use]
 extern crate bitflags;
 extern crate bitintr;

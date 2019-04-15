@@ -5,7 +5,7 @@ use std::io::Write;
 use std::sync::mpsc;
 use std::collections::{ HashMap, HashSet };
 
-use num::{ Num, PrimInt };
+use num_traits::{ Num, PrimInt };
 
 use crate::arm7tdmi::StepEvent;
 use crate::bus::Bus;

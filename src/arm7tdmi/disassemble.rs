@@ -1,5 +1,5 @@
 use bitintr::Pext;
-use num::abs;
+use num_traits::abs;
 use regex::Regex;
 
 use std::error::Error as StdError;

@@ -1,4 +1,4 @@
-use num::FromPrimitive;
+use num_traits::FromPrimitive;
 
 #[derive(Clone, Copy, Default)]
 pub struct ObjTransform {
@@ -8,13 +8,11 @@ pub struct ObjTransform {
     pub pd: u16,
 }
 
-enum_from_primitive! {
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Primitive)]
 enum ObjMode {
     Normal = 0,
     SemiTransparent = 1,
     ObjWindow = 2,
-}
 }
 
 impl Default for ObjMode {
