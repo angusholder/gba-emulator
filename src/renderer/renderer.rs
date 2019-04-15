@@ -158,6 +158,10 @@ impl Renderer {
             if self.x == VIRT_WIDTH as u16 {
                 self.x = 0;
 
+                if self.scanline < PHYS_HEIGHT as u8 {
+                    self.render_line(buffer);
+                }
+
                 if self.scanline == VIRT_HEIGHT as u8 {
                     self.scanline = 0;
                 } else {
@@ -169,7 +173,6 @@ impl Renderer {
                 }
 
                 if self.scanline == VBLANK_START {
-                    self.render_line(buffer);
                     if self.vblank_irq_enable {
                         flags |= IrqFlags::LCD_VBLANK;
                         note!(GPU, "VBlank started with IRQ signal");
