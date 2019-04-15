@@ -16,7 +16,7 @@ mod log;
 #[macro_use]
 mod utils;
 mod arm7tdmi;
-mod interconnect;
+mod gba;
 mod disassemble;
 mod debugger;
 mod renderer;
@@ -26,7 +26,7 @@ mod dma;
 mod iomap;
 mod bus;
 
-use interconnect::Interconnect;
+use gba::Gba;
 use debugger::Debugger;
 use std::error::Error;
 use std::fs;
@@ -34,10 +34,10 @@ use std::fs;
 fn main() -> Result<(), Box<Error>> {
     let bios = fs::read("roms/bios.bin")?;
     let rom = fs::read("roms/Pac-Man Collection.gba")?;
-    let mut interconnect = Interconnect::new(&bios, &rom);
-    interconnect.arm.signal_reset();
+    let mut gba = Gba::new(&bios, &rom);
+    gba.arm.signal_reset();
 
-    let mut debugger = Debugger::new(interconnect);
+    let mut debugger = Debugger::new(gba);
 
     debugger.run();
     Ok(())

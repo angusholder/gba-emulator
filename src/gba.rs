@@ -50,7 +50,7 @@ fn unhandled_write<T: UpperHex>(addr: u32, value: T) -> ! {
 }
 
 #[derive(Clone)]
-pub struct Interconnect {
+pub struct Gba {
     pc_inside_bios: bool,
     pub cycles: Cycle,
 
@@ -83,9 +83,9 @@ pub struct Interconnect {
 // - OAM
 
 // TODO: Handle misaligned reads/writes
-impl Interconnect {
-    pub fn new(bios: &[u8], game: &[u8]) -> Box<Interconnect> {
-        let mut result = Box::new(Interconnect {
+impl Gba {
+    pub fn new(bios: &[u8], game: &[u8]) -> Box<Gba> {
+        let mut result = Box::new(Gba {
             pc_inside_bios: true,
             cycles: Cycle(0),
 
@@ -317,7 +317,7 @@ impl Interconnect {
     }
 }
 
-impl Bus for Interconnect {
+impl Bus for Gba {
     fn read8(&mut self, addr: u32) -> u8 {
         let (cycle, read) = self.debug_read8(addr);
         self.cycles += cycle;

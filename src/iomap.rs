@@ -1,4 +1,4 @@
-use interconnect::{ Interconnect, IrqFlags, WaitStateControlReg, SoundPWMControlReg };
+use gba::{Gba, IrqFlags, WaitStateControlReg, SoundPWMControlReg };
 use log::*;
 use utils::Cycle;
 
@@ -15,26 +15,26 @@ macro_rules! unwriteable {
     }
 }
 
-pub fn read16(ic: &Interconnect, addr: u32) -> u16 {
+pub fn read16(gba: &Gba, addr: u32) -> u16 {
     match addr & !1 {
-        REG_DISPCNT => ic.renderer.read_dispcnt(),
-        REG_DISPSTAT => ic.renderer.read_dispstat(),
-        REG_SOUNDBIAS => ic.sound_bias.into(),
-        REG_IE => ic.interrupt_enable.bits(),
-        REG_IF => ic.interrupt_flags.bits(),
+        REG_DISPCNT => gba.renderer.read_dispcnt(),
+        REG_DISPSTAT => gba.renderer.read_dispstat(),
+        REG_SOUNDBIAS => gba.sound_bias.into(),
+        REG_IE => gba.interrupt_enable.bits(),
+        REG_IF => gba.interrupt_flags.bits(),
         REG_WAITCNT => {
             warn!(IO, "Reading stubbed WAITCNT");
             0
         }
-        REG_IME => ic.master_interrupt_enable as u16,
+        REG_IME => gba.master_interrupt_enable as u16,
         // REG_POSTFLG | REG_HALTCNT
-        REG_POSTFLG => (ic.post_boot_flag as u16) | (0u16 << 8),
-        REG_VCOUNT => ic.renderer.scanline as u16,
+        REG_POSTFLG => (gba.post_boot_flag as u16) | (0u16 << 8),
+        REG_VCOUNT => gba.renderer.scanline as u16,
 
-        REG_BG0CNT => ic.renderer.read_bgcnt(0),
-        REG_BG1CNT => ic.renderer.read_bgcnt(1),
-        REG_BG2CNT => ic.renderer.read_bgcnt(2),
-        REG_BG3CNT => ic.renderer.read_bgcnt(3),
+        REG_BG0CNT => gba.renderer.read_bgcnt(0),
+        REG_BG1CNT => gba.renderer.read_bgcnt(1),
+        REG_BG2CNT => gba.renderer.read_bgcnt(2),
+        REG_BG3CNT => gba.renderer.read_bgcnt(3),
 
         REG_BG0HOFS => unreadable!(GPU, REG_BG0HOFS),
         REG_BG0VOFS => unreadable!(GPU, REG_BG0VOFS),
@@ -63,15 +63,15 @@ pub fn read16(ic: &Interconnect, addr: u32) -> u16 {
         REG_BG3Y_LO => unreadable!(GPU, REG_BG2Y_LO),
         REG_BG3Y_HI => unreadable!(GPU, REG_BG2Y_HI),
 
-        REG_TM0CNT_L => ic.timers[0].get_current_value(ic.cycles),
-        REG_TM1CNT_L => ic.timers[1].get_current_value(ic.cycles),
-        REG_TM2CNT_L => ic.timers[2].get_current_value(ic.cycles),
-        REG_TM3CNT_L => ic.timers[3].get_current_value(ic.cycles),
+        REG_TM0CNT_L => gba.timers[0].get_current_value(gba.cycles),
+        REG_TM1CNT_L => gba.timers[1].get_current_value(gba.cycles),
+        REG_TM2CNT_L => gba.timers[2].get_current_value(gba.cycles),
+        REG_TM3CNT_L => gba.timers[3].get_current_value(gba.cycles),
 
-        REG_TM0CNT_H => ic.timers[0].read_control(),
-        REG_TM1CNT_H => ic.timers[1].read_control(),
-        REG_TM2CNT_H => ic.timers[2].read_control(),
-        REG_TM3CNT_H => ic.timers[3].read_control(),
+        REG_TM0CNT_H => gba.timers[0].read_control(),
+        REG_TM1CNT_H => gba.timers[1].read_control(),
+        REG_TM2CNT_H => gba.timers[2].read_control(),
+        REG_TM3CNT_H => gba.timers[3].read_control(),
 
         REG_DMA0SAD_LO => unreadable!(DMA0, REG_DMA0SAD_LO),
         REG_DMA0SAD_HI => unreadable!(DMA0, REG_DMA0SAD_HI),
@@ -96,10 +96,10 @@ pub fn read16(ic: &Interconnect, addr: u32) -> u16 {
         REG_DMA2CNT_L => unreadable!(DMA2, REG_DMA2CNT_L),
         REG_DMA3CNT_L => unreadable!(DMA3, REG_DMA3CNT_L),
 
-        REG_DMA0CNT_H => ic.dma[0].read_control(),
-        REG_DMA1CNT_H => ic.dma[1].read_control(),
-        REG_DMA2CNT_H => ic.dma[2].read_control(),
-        REG_DMA3CNT_H => ic.dma[3].read_control(),
+        REG_DMA0CNT_H => gba.dma[0].read_control(),
+        REG_DMA1CNT_H => gba.dma[1].read_control(),
+        REG_DMA2CNT_H => gba.dma[2].read_control(),
+        REG_DMA3CNT_H => gba.dma[3].read_control(),
 
         _ => {
             print!("(STUB) ");
@@ -108,108 +108,108 @@ pub fn read16(ic: &Interconnect, addr: u32) -> u16 {
     }
 }
 
-pub fn write16(ic: &mut Interconnect, addr: u32, value: u16) {
+pub fn write16(gba: &mut Gba, addr: u32, value: u16) {
     match addr & !1 {
-        REG_DISPCNT => ic.renderer.write_dispcnt(value),
-        REG_DISPSTAT => ic.renderer.write_dispstat(value),
-        REG_SOUNDBIAS => ic.sound_bias = SoundPWMControlReg::from(value),
+        REG_DISPCNT => gba.renderer.write_dispcnt(value),
+        REG_DISPSTAT => gba.renderer.write_dispstat(value),
+        REG_SOUNDBIAS => gba.sound_bias = SoundPWMControlReg::from(value),
         REG_IE => {
-            ic.interrupt_enable = IrqFlags::from_bits_truncate(value);
-            trace!(CPU, "Setting interrupt_enable = {:?}", ic.interrupt_enable);
+            gba.interrupt_enable = IrqFlags::from_bits_truncate(value);
+            trace!(CPU, "Setting interrupt_enable = {:?}", gba.interrupt_enable);
         }
         REG_IF => {
             let value = IrqFlags::from_bits_truncate(value);
-            ic.interrupt_flags.remove(value);
-            trace!(CPU, "Setting interrupt_flags = {:?}", ic.interrupt_flags);
+            gba.interrupt_flags.remove(value);
+            trace!(CPU, "Setting interrupt_flags = {:?}", gba.interrupt_flags);
         }
         REG_WAITCNT => {
             let ctrl = WaitStateControlReg::from(value);
-            ic.sram_wait_control = Cycle([4, 3, 2, 8][ctrl.sram_wait_control]);
-            ic.gamepak.wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
-            ic.gamepak.wait_states[0].seq = Cycle([2, 1][ctrl.wait_state_0_seq]);
-            ic.gamepak.wait_states[1].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_1_non_seq]);
-            ic.gamepak.wait_states[1].seq = Cycle([4, 1][ctrl.wait_state_1_seq]);
-            ic.gamepak.wait_states[2].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_2_non_seq]);
-            ic.gamepak.wait_states[2].seq = Cycle([8, 1][ctrl.wait_state_2_seq]);
-            ic.gamepak_prefetch_buffer = ctrl.gamepak_prefetch_buffer;
+            gba.sram_wait_control = Cycle([4, 3, 2, 8][ctrl.sram_wait_control]);
+            gba.gamepak.wait_states[0].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_0_non_seq]);
+            gba.gamepak.wait_states[0].seq = Cycle([2, 1][ctrl.wait_state_0_seq]);
+            gba.gamepak.wait_states[1].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_1_non_seq]);
+            gba.gamepak.wait_states[1].seq = Cycle([4, 1][ctrl.wait_state_1_seq]);
+            gba.gamepak.wait_states[2].non_seq = Cycle([4, 3, 2, 8][ctrl.wait_state_2_non_seq]);
+            gba.gamepak.wait_states[2].seq = Cycle([8, 1][ctrl.wait_state_2_seq]);
+            gba.gamepak_prefetch_buffer = ctrl.gamepak_prefetch_buffer;
         }
         REG_IME => {
-            trace!(CPU, "Setting master_interrupt_enable = {}", ic.master_interrupt_enable);
-            ic.master_interrupt_enable = (value & 1) != 0;
+            trace!(CPU, "Setting master_interrupt_enable = {}", gba.master_interrupt_enable);
+            gba.master_interrupt_enable = (value & 1) != 0;
         }
         // TODO: REG_HALTCNT
-        REG_POSTFLG => ic.post_boot_flag = value != 0,
+        REG_POSTFLG => gba.post_boot_flag = value != 0,
         REG_VCOUNT => unwriteable!(GPU, REG_VCOUNT, value),
 
-        REG_BG0CNT => ic.renderer.write_bgcnt(0, value),
-        REG_BG1CNT => ic.renderer.write_bgcnt(1, value),
-        REG_BG2CNT => ic.renderer.write_bgcnt(2, value),
-        REG_BG3CNT => ic.renderer.write_bgcnt(3, value),
+        REG_BG0CNT => gba.renderer.write_bgcnt(0, value),
+        REG_BG1CNT => gba.renderer.write_bgcnt(1, value),
+        REG_BG2CNT => gba.renderer.write_bgcnt(2, value),
+        REG_BG3CNT => gba.renderer.write_bgcnt(3, value),
 
-        REG_BG0HOFS => ic.renderer.bg[0].x_offset = value & 0x1FF,
-        REG_BG0VOFS => ic.renderer.bg[0].y_offset = value & 0x1FF,
-        REG_BG1HOFS => ic.renderer.bg[1].x_offset = value & 0x1FF,
-        REG_BG1VOFS => ic.renderer.bg[1].y_offset = value & 0x1FF,
-        REG_BG2HOFS => ic.renderer.bg[2].x_offset = value & 0x1FF,
-        REG_BG2VOFS => ic.renderer.bg[2].y_offset = value & 0x1FF,
-        REG_BG3HOFS => ic.renderer.bg[3].x_offset = value & 0x1FF,
-        REG_BG3VOFS => ic.renderer.bg[3].y_offset = value & 0x1FF,
+        REG_BG0HOFS => gba.renderer.bg[0].x_offset = value & 0x1FF,
+        REG_BG0VOFS => gba.renderer.bg[0].y_offset = value & 0x1FF,
+        REG_BG1HOFS => gba.renderer.bg[1].x_offset = value & 0x1FF,
+        REG_BG1VOFS => gba.renderer.bg[1].y_offset = value & 0x1FF,
+        REG_BG2HOFS => gba.renderer.bg[2].x_offset = value & 0x1FF,
+        REG_BG2VOFS => gba.renderer.bg[2].y_offset = value & 0x1FF,
+        REG_BG3HOFS => gba.renderer.bg[3].x_offset = value & 0x1FF,
+        REG_BG3VOFS => gba.renderer.bg[3].y_offset = value & 0x1FF,
 
-        REG_BG2PA => ic.renderer.bg[2].dx = value,
-        REG_BG2PB => ic.renderer.bg[2].dmx = value,
-        REG_BG2PC => ic.renderer.bg[2].dy = value,
-        REG_BG2PD => ic.renderer.bg[2].dmy = value,
-        REG_BG2X_LO => ic.renderer.bg[2].write_xcoord_lo(value),
-        REG_BG2X_HI => ic.renderer.bg[2].write_xcoord_hi(value),
-        REG_BG2Y_LO => ic.renderer.bg[2].write_ycoord_lo(value),
-        REG_BG2Y_HI => ic.renderer.bg[2].write_ycoord_hi(value),
+        REG_BG2PA => gba.renderer.bg[2].dx = value,
+        REG_BG2PB => gba.renderer.bg[2].dmx = value,
+        REG_BG2PC => gba.renderer.bg[2].dy = value,
+        REG_BG2PD => gba.renderer.bg[2].dmy = value,
+        REG_BG2X_LO => gba.renderer.bg[2].write_xcoord_lo(value),
+        REG_BG2X_HI => gba.renderer.bg[2].write_xcoord_hi(value),
+        REG_BG2Y_LO => gba.renderer.bg[2].write_ycoord_lo(value),
+        REG_BG2Y_HI => gba.renderer.bg[2].write_ycoord_hi(value),
 
-        REG_BG3PA => ic.renderer.bg[3].dx = value,
-        REG_BG3PB => ic.renderer.bg[3].dmx = value,
-        REG_BG3PC => ic.renderer.bg[3].dy = value,
-        REG_BG3PD => ic.renderer.bg[3].dmy = value,
-        REG_BG3X_LO => ic.renderer.bg[3].write_xcoord_lo(value),
-        REG_BG3X_HI => ic.renderer.bg[3].write_xcoord_hi(value),
-        REG_BG3Y_LO => ic.renderer.bg[3].write_ycoord_lo(value),
-        REG_BG3Y_HI => ic.renderer.bg[3].write_ycoord_hi(value),
+        REG_BG3PA => gba.renderer.bg[3].dx = value,
+        REG_BG3PB => gba.renderer.bg[3].dmx = value,
+        REG_BG3PC => gba.renderer.bg[3].dy = value,
+        REG_BG3PD => gba.renderer.bg[3].dmy = value,
+        REG_BG3X_LO => gba.renderer.bg[3].write_xcoord_lo(value),
+        REG_BG3X_HI => gba.renderer.bg[3].write_xcoord_hi(value),
+        REG_BG3Y_LO => gba.renderer.bg[3].write_ycoord_lo(value),
+        REG_BG3Y_HI => gba.renderer.bg[3].write_ycoord_hi(value),
 
-        REG_TM0CNT_L => ic.timers[0].set_reload_value(value),
-        REG_TM1CNT_L => ic.timers[1].set_reload_value(value),
-        REG_TM2CNT_L => ic.timers[2].set_reload_value(value),
-        REG_TM3CNT_L => ic.timers[3].set_reload_value(value),
+        REG_TM0CNT_L => gba.timers[0].set_reload_value(value),
+        REG_TM1CNT_L => gba.timers[1].set_reload_value(value),
+        REG_TM2CNT_L => gba.timers[2].set_reload_value(value),
+        REG_TM3CNT_L => gba.timers[3].set_reload_value(value),
 
-        REG_TM0CNT_H => ic.timers[0].write_control(ic.cycles, value),
-        REG_TM1CNT_H => ic.timers[1].write_control(ic.cycles, value),
-        REG_TM2CNT_H => ic.timers[2].write_control(ic.cycles, value),
-        REG_TM3CNT_H => ic.timers[3].write_control(ic.cycles, value),
+        REG_TM0CNT_H => gba.timers[0].write_control(gba.cycles, value),
+        REG_TM1CNT_H => gba.timers[1].write_control(gba.cycles, value),
+        REG_TM2CNT_H => gba.timers[2].write_control(gba.cycles, value),
+        REG_TM3CNT_H => gba.timers[3].write_control(gba.cycles, value),
 
-        REG_DMA0SAD_LO => ic.dma[0].write_source_lo(value),
-        REG_DMA0SAD_HI => ic.dma[0].write_source_hi(value),
-        REG_DMA1SAD_LO => ic.dma[1].write_source_lo(value),
-        REG_DMA1SAD_HI => ic.dma[1].write_source_hi(value),
-        REG_DMA2SAD_LO => ic.dma[2].write_source_lo(value),
-        REG_DMA2SAD_HI => ic.dma[2].write_source_hi(value),
-        REG_DMA3SAD_LO => ic.dma[3].write_source_lo(value),
-        REG_DMA3SAD_HI => ic.dma[3].write_source_hi(value),
+        REG_DMA0SAD_LO => gba.dma[0].write_source_lo(value),
+        REG_DMA0SAD_HI => gba.dma[0].write_source_hi(value),
+        REG_DMA1SAD_LO => gba.dma[1].write_source_lo(value),
+        REG_DMA1SAD_HI => gba.dma[1].write_source_hi(value),
+        REG_DMA2SAD_LO => gba.dma[2].write_source_lo(value),
+        REG_DMA2SAD_HI => gba.dma[2].write_source_hi(value),
+        REG_DMA3SAD_LO => gba.dma[3].write_source_lo(value),
+        REG_DMA3SAD_HI => gba.dma[3].write_source_hi(value),
 
-        REG_DMA0DAD_LO => ic.dma[0].write_dest_lo(value),
-        REG_DMA0DAD_HI => ic.dma[0].write_dest_hi(value),
-        REG_DMA1DAD_LO => ic.dma[1].write_dest_lo(value),
-        REG_DMA1DAD_HI => ic.dma[1].write_dest_hi(value),
-        REG_DMA2DAD_LO => ic.dma[2].write_dest_lo(value),
-        REG_DMA2DAD_HI => ic.dma[2].write_dest_hi(value),
-        REG_DMA3DAD_LO => ic.dma[3].write_dest_lo(value),
-        REG_DMA3DAD_HI => ic.dma[3].write_dest_hi(value),
+        REG_DMA0DAD_LO => gba.dma[0].write_dest_lo(value),
+        REG_DMA0DAD_HI => gba.dma[0].write_dest_hi(value),
+        REG_DMA1DAD_LO => gba.dma[1].write_dest_lo(value),
+        REG_DMA1DAD_HI => gba.dma[1].write_dest_hi(value),
+        REG_DMA2DAD_LO => gba.dma[2].write_dest_lo(value),
+        REG_DMA2DAD_HI => gba.dma[2].write_dest_hi(value),
+        REG_DMA3DAD_LO => gba.dma[3].write_dest_lo(value),
+        REG_DMA3DAD_HI => gba.dma[3].write_dest_hi(value),
 
-        REG_DMA0CNT_L => ic.dma[0].write_word_count(value),
-        REG_DMA1CNT_L => ic.dma[1].write_word_count(value),
-        REG_DMA2CNT_L => ic.dma[2].write_word_count(value),
-        REG_DMA3CNT_L => ic.dma[3].write_word_count(value),
+        REG_DMA0CNT_L => gba.dma[0].write_word_count(value),
+        REG_DMA1CNT_L => gba.dma[1].write_word_count(value),
+        REG_DMA2CNT_L => gba.dma[2].write_word_count(value),
+        REG_DMA3CNT_L => gba.dma[3].write_word_count(value),
 
-        REG_DMA0CNT_H => ic.dma[0].write_control(value),
-        REG_DMA1CNT_H => ic.dma[1].write_control(value),
-        REG_DMA2CNT_H => ic.dma[2].write_control(value),
-        REG_DMA3CNT_H => ic.dma[3].write_control(value),
+        REG_DMA0CNT_H => gba.dma[0].write_control(value),
+        REG_DMA1CNT_H => gba.dma[1].write_control(value),
+        REG_DMA2CNT_H => gba.dma[2].write_control(value),
+        REG_DMA3CNT_H => gba.dma[3].write_control(value),
 
         _ => {
             print!("(STUB) ");
@@ -217,8 +217,8 @@ pub fn write16(ic: &mut Interconnect, addr: u32, value: u16) {
     }
 }
 
-pub fn read8(ic: &Interconnect, addr: u32) -> u8 {
-    let half = read16(ic, addr & !1);
+pub fn read8(gba: &Gba, addr: u32) -> u8 {
+    let half = read16(gba, addr & !1);
     (if addr & 1 == 0 {
         half
     } else {
@@ -226,23 +226,23 @@ pub fn read8(ic: &Interconnect, addr: u32) -> u8 {
     }) as u8
 }
 
-pub fn read32(ic: &Interconnect, addr: u32) -> u32 {
-    (read16(ic, addr) as u32) | (read16(ic, addr + 2) as u32) << 16
+pub fn read32(gba: &Gba, addr: u32) -> u32 {
+    (read16(gba, addr) as u32) | (read16(gba, addr + 2) as u32) << 16
 }
 
-pub fn write8(ic: &mut Interconnect, addr: u32, value: u8) {
-    let half = read16(ic, addr & !1);
+pub fn write8(gba: &mut Gba, addr: u32, value: u8) {
+    let half = read16(gba, addr & !1);
     let writeback = if addr & 1 == 0 {
         (half & !0xFF) | (value as u16)
     } else {
         (half & 0xFF) | (value as u16) << 8
     };
-    write16(ic, addr, writeback);
+    write16(gba, addr, writeback);
 }
 
-pub fn write32(ic: &mut Interconnect, addr: u32, value: u32) {
-    write16(ic, addr, value as u16);
-    write16(ic, addr + 2, (value >> 16) as u16)
+pub fn write32(gba: &mut Gba, addr: u32, value: u32) {
+    write16(gba, addr, value as u16);
+    write16(gba, addr + 2, (value >> 16) as u16)
 }
 
 const REG_DISPCNT: u32 = 0x4000000;     // 2    R/W   LCD Control

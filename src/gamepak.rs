@@ -26,7 +26,7 @@ impl WaitState {
 pub struct GamePak {
     buffer: Buffer,
     next_seq_addr: Cell<u32>,
-    // TODO: These are currently accessed in the Interconnect, should they be encapsulated?
+    // TODO: These are currently accessed in the gba, should they be encapsulated?
     pub wait_states: [WaitState; 3],
 }
 

@@ -9,7 +9,7 @@ use num::{ Num, PrimInt };
 
 use arm7tdmi::StepEvent;
 use bus::Bus;
-use interconnect::Interconnect;
+use gba::Gba;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use log::{ self, LogKind, LogLevel };
 use renderer::FrameBuffer;
@@ -200,11 +200,11 @@ enum State {
 
 #[derive(Clone)]
 struct EmulationState {
-    interconnect: Box<Interconnect>,
+    gba: Box<Gba>,
 }
 
 pub struct Debugger {
-    interconnect: Box<Interconnect>,
+    gba: Box<Gba>,
     buffer: FrameBuffer,
     save_states: HashMap<String, EmulationState>,
     temp_breakpoints: HashSet<u32>,
@@ -212,9 +212,9 @@ pub struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(interconnect: Box<Interconnect>) -> Debugger {
+    pub fn new(gba: Box<Gba>) -> Debugger {
         Debugger {
-            interconnect,
+            gba,
             buffer: FrameBuffer::new(),
             save_states: HashMap::new(),
             temp_breakpoints: HashSet::new(),
@@ -223,32 +223,32 @@ impl Debugger {
     }
 
     fn disassemble(&mut self) {
-        let thumb_mode = self.interconnect.arm.cpsr.get_thumb_mode();
-        let addr = self.interconnect.arm.current_pc();
+        let thumb_mode = self.gba.arm.cpsr.get_thumb_mode();
+        let addr = self.gba.arm.current_pc();
         if thumb_mode {
-            let op = self.interconnect.exec_thumb_slow(addr);
+            let op = self.gba.exec_thumb_slow(addr);
             let dis = disassemble_thumb_opcode(op as u32, addr);
             println!("0x{:07X}: ({:04X}) {}", addr, op, dis);
         } else {
-            let op = self.interconnect.exec_arm_slow(addr);
+            let op = self.gba.exec_arm_slow(addr);
             let dis = disassemble_arm_opcode(op, addr);
             println!("0x{:07X}: ({:08X}) {}", addr, op, dis);
         }
     }
 
     fn step(&mut self, print_state: bool) -> bool {
-        self.interconnect.step(&mut self.buffer);
+        self.gba.step(&mut self.buffer);
 
         let event = StepEvent::None;
         if print_state {
-            println!("{:?}\n", self.interconnect.arm);
+            println!("{:?}\n", self.gba.arm);
         }
         match event {
             StepEvent::TriggerWatchpoint(addr) => {
                 println!("Watchpoint triggered at {:06X}", addr);
                 if self.temp_watchpoints.contains(&addr) {
                     self.temp_watchpoints.remove(&addr);
-                    self.interconnect.arm.watchpoints.remove(addr);
+                    self.gba.arm.watchpoints.remove(addr);
                 }
                 true
             }
@@ -256,7 +256,7 @@ impl Debugger {
                 println!("Breakpoint triggered at {:06X}", addr);
                 if self.temp_breakpoints.contains(&addr) {
                     self.temp_breakpoints.remove(&addr);
-                    self.interconnect.arm.breakpoints.remove(addr);
+                    self.gba.arm.breakpoints.remove(addr);
                 }
                 true
             }
@@ -342,34 +342,34 @@ impl Debugger {
         use self::Command::*;
         match cmd {
             AddBreakpoint(addr) => {
-                self.interconnect.arm.breakpoints.insert(addr);
+                self.gba.arm.breakpoints.insert(addr);
             }
             AddTempBreakpoint(addr) => {
-                self.interconnect.arm.breakpoints.insert(addr);
+                self.gba.arm.breakpoints.insert(addr);
                 self.temp_breakpoints.insert(addr);
             }
             DelBreakpoint(addr) => {
-                self.interconnect.arm.breakpoints.remove(addr);
+                self.gba.arm.breakpoints.remove(addr);
             }
             AddWatchpoint(addr) => {
-                self.interconnect.arm.watchpoints.insert(addr);
+                self.gba.arm.watchpoints.insert(addr);
             }
             AddTempWatchpoint(addr) => {
-                self.interconnect.arm.watchpoints.insert(addr);
+                self.gba.arm.watchpoints.insert(addr);
                 self.temp_watchpoints.insert(addr);
             }
             DelWatchpoint(addr) => {
-                self.interconnect.arm.watchpoints.remove(addr);
+                self.gba.arm.watchpoints.remove(addr);
             }
 
             ListBreakpoints => {
-                for (i, b) in self.interconnect.arm.breakpoints.iter().enumerate() {
+                for (i, b) in self.gba.arm.breakpoints.iter().enumerate() {
                     println!("  {}: {:06X}", i, b);
                 }
             }
 
             ListWatchpoints => {
-                for (i, w) in self.interconnect.arm.watchpoints.iter().enumerate() {
+                for (i, w) in self.gba.arm.watchpoints.iter().enumerate() {
                     println!("  {}: {:06X}", i, w);
                 }
             }
@@ -381,49 +381,49 @@ impl Debugger {
                 return State::Running;
             }
             Goto(addr) => {
-                self.interconnect.arm.branch_to(addr);
+                self.gba.arm.branch_to(addr);
             }
 
             SaveState(name) => {
                 self.save_states.insert(name, EmulationState {
-                    interconnect: self.interconnect.clone(),
+                    gba: self.gba.clone(),
                 });
             }
             RestoreState(name) => {
                 if let Some(mut state) = self.save_states.get(&name).cloned() {
-                    state.interconnect.arm.watchpoints = self.interconnect.arm.watchpoints.clone();
-                    state.interconnect.arm.breakpoints = self.interconnect.arm.breakpoints.clone();
-                    self.interconnect = state.interconnect;
+                    state.gba.arm.watchpoints = self.gba.arm.watchpoints.clone();
+                    state.gba.arm.breakpoints = self.gba.arm.breakpoints.clone();
+                    self.gba = state.gba;
                 } else {
                     println!("No save state exists named '{}'", name);
                 }
             }
 
             LoadB(addr) => {
-                let val = self.interconnect.debug_read8(addr).1;
+                let val = self.gba.debug_read8(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadH(addr) => {
-                let val = self.interconnect.debug_read16(addr).1;
+                let val = self.gba.debug_read16(addr).1;
                 println!("{} ({:08X})", val, val);
             }
             LoadW(addr) => {
-                let val = self.interconnect.debug_read32(addr).1;
+                let val = self.gba.debug_read32(addr).1;
                 println!("{} ({:08X})", val, val);
             }
 
             StoreB(addr, val) => {
-                self.interconnect.debug_write8(addr, val);
+                self.gba.debug_write8(addr, val);
             }
             StoreH(addr, val) => {
-                self.interconnect.debug_write16(addr, val);
+                self.gba.debug_write16(addr, val);
             }
             StoreW(addr, val) => {
-                self.interconnect.debug_write32(addr, val);
+                self.gba.debug_write32(addr, val);
             }
 
             ListRegs => {
-                println!("{:?}", self.interconnect.arm);
+                println!("{:?}", self.gba.arm);
             }
 
             Log(level, kinds) => {

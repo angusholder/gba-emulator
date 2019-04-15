@@ -1,7 +1,7 @@
 use num::FromPrimitive;
 
 use bus::Bus;
-use interconnect::{ Interconnect, IrqFlags };
+use gba::{Gba, IrqFlags };
 use log::*;
 use utils::Latched;
 
@@ -78,21 +78,21 @@ pub struct Dma {
     gamepak_drq: bool,
 }
 
-fn step_dma_transfer(interconnect: &mut Interconnect, index: usize) -> IrqFlags {
+fn step_dma_transfer(gba: &mut Gba, index: usize) -> IrqFlags {
     let mut flags = IrqFlags::empty();
     let i = index;
 
-    assert!(interconnect.dma[i].enable);
+    assert!(gba.dma[i].enable);
 
     // `running` must be `Some` when calling `step_dma_transfer()`
-    let mut state = interconnect.dma[i].running.unwrap();
+    let mut state = gba.dma[i].running.unwrap();
 
-    if interconnect.dma[i].transfer_type == DmaTransferType::U16 {
-        let word = interconnect.read16(state.source);
-        interconnect.write16(state.dest, word);
+    if gba.dma[i].transfer_type == DmaTransferType::U16 {
+        let word = gba.read16(state.source);
+        gba.write16(state.dest, word);
     } else {
-        let word = interconnect.read32(state.source);
-        interconnect.write32(state.dest, word);
+        let word = gba.read32(state.source);
+        gba.write32(state.dest, word);
     }
 
     state.dest = state.dest.wrapping_add(state.dest_step);
@@ -101,49 +101,49 @@ fn step_dma_transfer(interconnect: &mut Interconnect, index: usize) -> IrqFlags 
 
     // This was the last word of the transfer
     if state.words_remaining == 0 {
-        if interconnect.dma[i].irq_on_complete {
-            flags |= interconnect.dma[i].irq_flag();
+        if gba.dma[i].irq_on_complete {
+            flags |= gba.dma[i].irq_flag();
         }
 
-        if !interconnect.dma[i].repeat {
-            interconnect.dma[i].enable = false;
+        if !gba.dma[i].repeat {
+            gba.dma[i].enable = false;
         }
 
-        interconnect.dma[i].running = None;
+        gba.dma[i].running = None;
     } else {
-        interconnect.dma[i].running = Some(state);
+        gba.dma[i].running = Some(state);
     }
 
     flags
 }
 
-pub fn step_dma_units(interconnect: &mut Interconnect) -> Option<IrqFlags> {
+pub fn step_dma_units(gba: &mut Gba) -> Option<IrqFlags> {
     for i in 0..4 {
-        if interconnect.dma[i].running.is_some() {
+        if gba.dma[i].running.is_some() {
             // We are mid-transfer so transfer the next word
-            return Some(step_dma_transfer(interconnect, i));
+            return Some(step_dma_transfer(gba, i));
         }
     }
 
     None
 }
 
-pub fn dma_on_vblank(interconnect: &mut Interconnect) {
+pub fn dma_on_vblank(gba: &mut Gba) {
     for i in 0..4 {
-        if interconnect.dma[i].enable && interconnect.dma[i].start_timing == DmaStartTiming::VBlank {
+        if gba.dma[i].enable && gba.dma[i].start_timing == DmaStartTiming::VBlank {
             // TODO: What to do if a transfer is already in progress
-            assert!(interconnect.dma[i].running.is_none());
-            initialize_dma(&mut interconnect.dma[i]);
+            assert!(gba.dma[i].running.is_none());
+            initialize_dma(&mut gba.dma[i]);
         }
     }
 }
 
-pub fn dma_on_hblank(interconnect: &mut Interconnect) {
+pub fn dma_on_hblank(gba: &mut Gba) {
     for i in 0..4 {
-        if interconnect.dma[i].enable && interconnect.dma[i].start_timing == DmaStartTiming::HBlank {
+        if gba.dma[i].enable && gba.dma[i].start_timing == DmaStartTiming::HBlank {
             // TODO: What to do if a transfer is already in progress
-            assert!(interconnect.dma[i].running.is_none());
-            initialize_dma(&mut interconnect.dma[i]);
+            assert!(gba.dma[i].running.is_none());
+            initialize_dma(&mut gba.dma[i]);
         }
     }
 }

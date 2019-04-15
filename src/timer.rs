@@ -3,7 +3,7 @@ use std::fmt;
 use num::FromPrimitive;
 
 use utils::Cycle;
-use interconnect::{ Interconnect, IrqFlags };
+use gba::{Gba, IrqFlags };
 use log::*;
 
 enum_from_primitive! {
@@ -63,28 +63,28 @@ impl TimerState {
     }
 }
 
-pub fn step_timers(interconnect: &mut Interconnect, cycles: Cycle) -> IrqFlags {
+pub fn step_timers(gba: &mut Gba, cycles: Cycle) -> IrqFlags {
     let mut flags = IrqFlags::empty();
     let mut prev_timer_wrapped = false;
 
-    for timer in interconnect.timers.iter_mut() {
+    for timer in gba.timers.iter_mut() {
         let mut this_timer_wrapped_at: Option<Cycle> = None;
         match timer.state {
             TimerState::Enabled { end_cycle, .. } => {
                 // Enabled doesn't explicitly track the current value, so all we need to do is
                 // check if we've wrapped.
                 if cycles >= end_cycle {
-                    trace!(timer.log_kind(), "Wrapped at {}", interconnect.cycles);
+                    trace!(timer.log_kind(), "Wrapped at {}", gba.cycles);
                     this_timer_wrapped_at = Some(end_cycle);
                 }
             }
             TimerState::Cascade { current_value } if prev_timer_wrapped => {
                 // Decrement current value, and if we've wrapped handle it below.
                 if let Some(value) = current_value.checked_sub(1) {
-                    trace!(timer.log_kind(), "Cascaded at {} to {}", interconnect.cycles, value);
+                    trace!(timer.log_kind(), "Cascaded at {} to {}", gba.cycles, value);
                     timer.state = TimerState::Cascade { current_value: value };
                 } else {
-                    trace!(timer.log_kind(), "Cascade wrapped at {}", interconnect.cycles);
+                    trace!(timer.log_kind(), "Cascade wrapped at {}", gba.cycles);
                     this_timer_wrapped_at = Some(cycles);
                 }
             }

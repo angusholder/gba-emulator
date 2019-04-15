@@ -1,5 +1,5 @@
 use utils::{ Buffer, Cycle };
-use interconnect::IrqFlags;
+use gba::IrqFlags;
 use log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
 use super::mode0;
@@ -113,7 +113,7 @@ pub struct Renderer {
     obj_transforms: [ObjTransform; 32],
     obj_attributes: [ObjAttributes; 128],
 
-    // These are accessed directly by io r/w routines in the interconnect
+    // These are accessed directly by io r/w routines in the gba
     pub scanline: u8,
     x: u16,
     pub bg: [Background; 4],
