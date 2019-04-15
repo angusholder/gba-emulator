@@ -102,7 +102,7 @@ impl FromStr for LogKind {
 
 macro_rules! log_ {
     ($level:expr, $kind:expr, $fmt:expr, $($arg:expr),*) => {
-        if $level >= ::log::get_log_level($kind) {
+        if $level >= crate::log::get_log_level($kind) {
             println!("{:>5}[{:<4}]: {}", $level, $kind, format_args!($fmt, $($arg),*));
         }
     }
@@ -113,7 +113,7 @@ macro_rules! trace {
         trace!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(::log::LogLevel::Trace, $kind, $fmt, $($arg),*);
+        log_!(crate::log::LogLevel::Trace, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -122,7 +122,7 @@ macro_rules! note {
         note!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(::log::LogLevel::Note, $kind, $fmt, $($arg),*);
+        log_!(crate::log::LogLevel::Note, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -131,7 +131,7 @@ macro_rules! warn {
         warn!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {
-        log_!(::log::LogLevel::Warn, $kind, $fmt, $($arg),*);
+        log_!(crate::log::LogLevel::Warn, $kind, $fmt, $($arg),*);
     }
 }
 
@@ -140,7 +140,7 @@ macro_rules! error {
         error!($kind, $fmt,);
     };
     ($kind:expr, $fmt:expr, $($arg:expr),*) => {{
-        log_!(::log::LogLevel::Error, $kind, $fmt, $($arg),*);
+        log_!(crate::log::LogLevel::Error, $kind, $fmt, $($arg),*);
         unreachable!();
     }}
 }

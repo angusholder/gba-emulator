@@ -7,7 +7,7 @@ use std::ops::BitOr;
 use std::fmt::Write;
 use regex::Captures;
 
-use arm7tdmi::{ REG_LR, REG_PC };
+use crate::arm7tdmi::{ REG_LR, REG_PC };
 
 pub type DisResult<T> = Result<T, Box<StdError>>;
 

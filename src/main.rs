@@ -26,8 +26,8 @@ mod dma;
 mod iomap;
 mod bus;
 
-use gba::Gba;
-use debugger::Debugger;
+use crate::gba::Gba;
+use crate::debugger::Debugger;
 use std::error::Error;
 use std::fs;
 

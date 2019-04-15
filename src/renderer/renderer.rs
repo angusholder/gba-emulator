@@ -1,10 +1,10 @@
-use utils::{ Buffer, Cycle };
-use gba::IrqFlags;
-use log::*;
+use crate::utils::{ Buffer, Cycle };
+use crate::gba::IrqFlags;
+use crate::log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
 use super::mode0;
 use super::FrameBuffer;
-use utils::sign_extend;
+use crate::utils::sign_extend;
 
 const ADDR_UPPER_MASK: u32 = 0xFF00_0000;
 

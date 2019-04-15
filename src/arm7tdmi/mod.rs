@@ -8,12 +8,12 @@ use std::fmt;
 
 use num::FromPrimitive;
 
-use utils::OrderedSet;
-use arm7tdmi::core_thumb::ThumbEncTable;
-use arm7tdmi::core_arm::ArmEncTable;
-use arm7tdmi::core_arm::ArmOp;
-use arm7tdmi::core_thumb::ThumbOp;
-use bus::BusPtr;
+use crate::utils::OrderedSet;
+use crate::arm7tdmi::core_thumb::ThumbEncTable;
+use crate::arm7tdmi::core_arm::ArmEncTable;
+use crate::arm7tdmi::core_arm::ArmOp;
+use crate::arm7tdmi::core_thumb::ThumbOp;
+use crate::bus::BusPtr;
 
 enum_from_primitive! {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

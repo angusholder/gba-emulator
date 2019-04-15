@@ -1,7 +1,7 @@
 use super::Arm7TDMI;
-pub use utils::sign_extend;
-use arm7tdmi::disassemble::DisResult;
-use arm7tdmi::disassemble::err;
+pub use crate::utils::sign_extend;
+use crate::arm7tdmi::disassemble::DisResult;
+use crate::arm7tdmi::disassemble::err;
 
 macro_rules! check_watchpoint {
     ($arm:expr, $addr:expr) => {
@@ -119,7 +119,7 @@ pub fn barrel_shift_ror_set_flags(arm: &mut Arm7TDMI, rm: u32, shift_amount: u32
 }
 
 pub mod cond {
-    use arm7tdmi::ConditionCode;
+    use crate::arm7tdmi::ConditionCode;
 
     pub trait Cond { const CC: ConditionCode; }
     pub struct Eq; impl Cond for Eq { const CC: ConditionCode = ConditionCode::Eq; }

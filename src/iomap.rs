@@ -1,6 +1,6 @@
-use gba::{Gba, IrqFlags, WaitStateControlReg, SoundPWMControlReg };
-use log::*;
-use utils::Cycle;
+use crate::gba::{Gba, IrqFlags, WaitStateControlReg, SoundPWMControlReg };
+use crate::log::*;
+use crate::utils::Cycle;
 
 macro_rules! unreadable {
     ($kind:expr, $reg:expr) => {{

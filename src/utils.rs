@@ -6,7 +6,7 @@ use std::slice;
 use num::PrimInt;
 
 #[allow(unused_imports)]
-use log::LogKind::*;
+use crate::log::LogKind::*;
 
 macro_rules! unpack {
     (u8,    $n:expr) => { $n as u8 };

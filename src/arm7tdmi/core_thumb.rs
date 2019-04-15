@@ -2,8 +2,8 @@ use num::NumCast;
 
 use super::{ REG_PC, REG_LR, REG_SP, Arm7TDMI };
 use super::core_common::*;
-use arm7tdmi::disassemble::{ DisResult, err };
-use bus::Bus;
+use crate::arm7tdmi::disassemble::{ DisResult, err };
+use crate::bus::Bus;
 
 pub fn step_thumb(arm: &mut Arm7TDMI, op: ThumbOp) {
     arm.thumb_enc_table.lookup(op)(arm, op);

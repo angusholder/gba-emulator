@@ -1,9 +1,9 @@
 use num::FromPrimitive;
 
-use bus::Bus;
-use gba::{Gba, IrqFlags };
-use log::*;
-use utils::Latched;
+use crate::bus::Bus;
+use crate::gba::{Gba, IrqFlags };
+use crate::log::*;
+use crate::utils::Latched;
 
 enum_from_primitive! {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

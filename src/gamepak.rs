@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use utils::{ Buffer, Cycle };
+use crate::utils::{ Buffer, Cycle };
 
 const GAMEPAK_PAGE_SIZE: u32 = 128*1024;
 const GAMEPAK_PAGE_MASK: u32 = GAMEPAK_PAGE_SIZE - 1;

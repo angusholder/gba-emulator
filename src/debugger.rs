@@ -7,12 +7,12 @@ use std::collections::{ HashMap, HashSet };
 
 use num::{ Num, PrimInt };
 
-use arm7tdmi::StepEvent;
-use bus::Bus;
-use gba::Gba;
-use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
-use log::{ self, LogKind, LogLevel };
-use renderer::FrameBuffer;
+use crate::arm7tdmi::StepEvent;
+use crate::bus::Bus;
+use crate::gba::Gba;
+use crate::disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
+use crate::log::{ self, LogKind, LogLevel };
+use crate::renderer::FrameBuffer;
 
 fn int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<N>
         where Iter: Iterator<Item=&'a str> {

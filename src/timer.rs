@@ -2,9 +2,9 @@ use std::fmt;
 
 use num::FromPrimitive;
 
-use utils::Cycle;
-use gba::{Gba, IrqFlags };
-use log::*;
+use crate::utils::Cycle;
+use crate::gba::{Gba, IrqFlags };
+use crate::log::*;
 
 enum_from_primitive! {
 #[derive(Clone, Copy, PartialEq, Eq)]

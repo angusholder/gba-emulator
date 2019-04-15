@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arm7tdmi::{ REG_PC, REG_LR };
+use crate::arm7tdmi::{ REG_PC, REG_LR };
 
 static CC_NAMES: [&'static str; 15] = [
     "EQ", // 0000 Z                 equal
