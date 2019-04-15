@@ -3,7 +3,7 @@ use crate::gba::IrqFlags;
 use crate::log::*;
 use super::oam::{ ObjAttributes, ObjTransform };
 use super::mode0;
-use super::FrameBuffer;
+use super::Framebuffer;
 use crate::utils::sign_extend;
 
 const ADDR_UPPER_MASK: u32 = 0xFF00_0000;
@@ -150,7 +150,7 @@ impl Renderer {
         }
     }
 
-    pub fn step_cycles(&mut self, mut cycles: Cycle, buffer: &mut FrameBuffer) -> IrqFlags {
+    pub fn step_cycles(&mut self, mut cycles: Cycle, buffer: &mut Framebuffer) -> IrqFlags {
         let mut flags = IrqFlags::empty();
         cycles += self.remaining_cycles;
         while cycles > Cycle(3) && flags.is_empty() {
@@ -208,7 +208,7 @@ impl Renderer {
         flags
     }
 
-    fn render_line(&mut self, buffer: &mut FrameBuffer) {
+    fn render_line(&mut self, buffer: &mut Framebuffer) {
         match self.control.bg_mode {
             0 => mode0::render_line(self, buffer),
             1...5 => unimplemented!(),

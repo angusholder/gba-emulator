@@ -12,7 +12,7 @@ use crate::bus::Bus;
 use crate::gba::Gba;
 use crate::disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use crate::log::{ self, LogKind, LogLevel };
-use crate::renderer::FrameBuffer;
+use crate::renderer::Framebuffer;
 
 fn int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<N>
         where Iter: Iterator<Item=&'a str> {
@@ -205,7 +205,7 @@ struct EmulationState {
 
 pub struct Debugger {
     gba: Box<Gba>,
-    buffer: FrameBuffer,
+    buffer: Framebuffer,
     save_states: HashMap<String, EmulationState>,
     temp_breakpoints: HashSet<u32>,
     temp_watchpoints: HashSet<u32>,
@@ -215,7 +215,7 @@ impl Debugger {
     pub fn new(gba: Box<Gba>) -> Debugger {
         Debugger {
             gba,
-            buffer: FrameBuffer::new(),
+            buffer: Framebuffer::new(),
             save_states: HashMap::new(),
             temp_breakpoints: HashSet::new(),
             temp_watchpoints: HashSet::new(),

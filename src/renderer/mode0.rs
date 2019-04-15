@@ -1,5 +1,5 @@
 use super::renderer::Renderer;
-use super::mode_common::{ Layer, FrameBuffer, FrameLine, render_line_of_8bit_layer, render_line_of_4bit_layer };
+use super::mode_common::{Layer, Framebuffer, FrameLine, render_line_of_8bit_layer, render_line_of_4bit_layer };
 
 fn get_draw_order(r: &mut Renderer) -> Box<[Layer]> {
     use self::Layer::*;
@@ -22,7 +22,7 @@ fn get_draw_order(r: &mut Renderer) -> Box<[Layer]> {
     res.into_boxed_slice()
 }
 
-pub fn render_line(r: &mut Renderer, buffer: &mut FrameBuffer) {
+pub fn render_line(r: &mut Renderer, buffer: &mut Framebuffer) {
     let line = &mut buffer[r.scanline as usize];
     for &layer in get_draw_order(r).iter() {
         render_line_of_layer(r, layer, line);

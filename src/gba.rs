@@ -1,5 +1,5 @@
 use crate::utils::{ Buffer, Cycle };
-use crate::renderer::{ Renderer, FrameBuffer };
+use crate::renderer::{Renderer, Framebuffer};
 use crate::dma::{ Dma, DmaUnit, step_dma_units, dma_on_vblank, dma_on_hblank };
 use crate::timer::{ Timer, TimerUnit, step_timers };
 use crate::gamepak::GamePak;
@@ -127,7 +127,7 @@ impl Gba {
         result
     }
 
-    pub fn step(&mut self, buffer: &mut FrameBuffer) {
+    pub fn step(&mut self, buffer: &mut Framebuffer) {
         let mut flags = IrqFlags::empty();
 
         let start_cycle = self.cycles;

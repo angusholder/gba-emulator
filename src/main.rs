@@ -1,15 +1,11 @@
 #![allow(dead_code)]
 
-extern crate num_traits;
 #[macro_use]
 extern crate enum_primitive_derive;
 #[macro_use]
 extern crate bitflags;
-extern crate bitintr;
-extern crate regex;
 #[macro_use]
 extern crate lazy_static;
-extern crate core;
 
 #[macro_use]
 mod log;
@@ -28,6 +24,7 @@ mod bus;
 
 use crate::gba::Gba;
 use crate::debugger::Debugger;
+use crate::renderer::{PHYS_WIDTH, PHYS_HEIGHT, Framebuffer};
 use std::error::Error;
 use std::fs;
 

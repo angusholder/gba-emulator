@@ -1,5 +1,5 @@
 use std::ops::{ Deref, DerefMut };
-use core::mem;
+use std::mem;
 
 pub trait Bus {
     fn read8(&mut self, addr: u32) -> u8;
