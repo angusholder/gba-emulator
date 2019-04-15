@@ -7,6 +7,7 @@ use log::*;
 use arm7tdmi::Arm7TDMI;
 use iomap;
 use std::fmt::UpperHex;
+use bus::Bus;
 
 const ROM_SIZE: u32 = 0x4000;
 const ROM_MASK: u32 = ROM_SIZE - 1;
@@ -50,11 +51,10 @@ fn unhandled_write<T: UpperHex>(addr: u32, value: T) -> ! {
 
 #[derive(Clone)]
 pub struct Interconnect {
-    pub prefetch: [u32; 2],
-
     pc_inside_bios: bool,
     pub cycles: Cycle,
 
+    pub arm: Arm7TDMI,
     pub timers: [Timer; 4],
     pub dma: [Dma; 4],
     pub(crate) renderer: Renderer,
@@ -84,13 +84,12 @@ pub struct Interconnect {
 
 // TODO: Handle misaligned reads/writes
 impl Interconnect {
-    pub fn new(bios: &[u8], game: &[u8]) -> Interconnect {
-        Interconnect {
-            prefetch: Default::default(),
-
+    pub fn new(bios: &[u8], game: &[u8]) -> Box<Interconnect> {
+        let mut result = Box::new(Interconnect {
             pc_inside_bios: true,
             cycles: Cycle(0),
 
+            arm: Arm7TDMI::new(),
             timers: [
                 Timer::new(TimerUnit::Tm0),
                 Timer::new(TimerUnit::Tm1),
@@ -122,10 +121,13 @@ impl Interconnect {
                 bias_level: 0x200,
                 amplitude_resolution: 0,
             }
-        }
+        });
+        let bus_ptr = result.as_mut() as *mut dyn Bus;
+        result.arm.bus.set_ptr(bus_ptr);
+        result
     }
 
-    pub fn step(&mut self, arm: &mut Arm7TDMI, buffer: &mut FrameBuffer) {
+    pub fn step(&mut self, buffer: &mut FrameBuffer) {
         let mut flags = IrqFlags::empty();
 
         let start_cycle = self.cycles;
@@ -134,7 +136,7 @@ impl Interconnect {
         if let Some(flag) = step_dma_units(self) {
             flags |= flag;
         } else {
-            arm.step(self);
+            self.arm.step();
         }
 
         let current_cycle = self.cycles;
@@ -152,13 +154,8 @@ impl Interconnect {
         let masked = flags & self.interrupt_enable;
         if self.master_interrupt_enable && !masked.is_empty() {
             self.interrupt_flags.insert(masked);
-            arm.signal_irq(self);
+            self.arm.signal_irq();
         }
-    }
-
-    pub fn add_internal_cycles(&mut self, cycles: i64) {
-        // TODO: Do GamePak prefetch buffer
-        self.cycles += cycles;
     }
 
     pub fn debug_read8(&self, addr: u32) -> (Cycle, u8) {
@@ -184,7 +181,7 @@ impl Interconnect {
 
             _ => {
                 unhandled_read(addr);
-                (Cycle(1), self.prefetch[1] as _)
+                (Cycle(1), self.arm.prefetch[1] as _)
             }
         }
     }
@@ -214,7 +211,7 @@ impl Interconnect {
 
             _ => {
                 unhandled_read(addr);
-                (Cycle(1), self.prefetch[1] as _)
+                (Cycle(1), self.arm.prefetch[1] as _)
             }
         }
     }
@@ -244,7 +241,7 @@ impl Interconnect {
 
             _ => {
                 unhandled_read(addr);
-                (Cycle(1), self.prefetch[1] as _)
+                (Cycle(1), self.arm.prefetch[1] as _)
             }
         }
     }
@@ -318,56 +315,63 @@ impl Interconnect {
             _ => unhandled_write(addr, value),
         }
     }
+}
 
-    pub fn read8(&mut self, addr: u32) -> u8 {
+impl Bus for Interconnect {
+    fn read8(&mut self, addr: u32) -> u8 {
         let (cycle, read) = self.debug_read8(addr);
         self.cycles += cycle;
         read
     }
-    pub fn read16(&mut self, addr: u32) -> u16 {
+    fn read16(&mut self, addr: u32) -> u16 {
         let (cycle, read) = self.debug_read16(addr);
         self.cycles += cycle;
         read
     }
-    pub fn read32(&mut self, addr: u32) -> u32 {
+    fn read32(&mut self, addr: u32) -> u32 {
         let (cycle, read) = self.debug_read32(addr);
         self.cycles += cycle;
         read
     }
-    pub fn read_ext_i8(&mut self, addr: u32) -> u32 {
+    fn read_ext_i8(&mut self, addr: u32) -> u32 {
         self.read8(addr) as i8 as u32
     }
-    pub fn read_ext_i16(&mut self, addr: u32) -> u32 {
+    fn read_ext_i16(&mut self, addr: u32) -> u32 {
         self.read16(addr) as i16 as u32
     }
-    pub fn read_ext_u8(&mut self, addr: u32) -> u32 {
+    fn read_ext_u8(&mut self, addr: u32) -> u32 {
         self.read8(addr) as u32
     }
-    pub fn read_ext_u16(&mut self, addr: u32) -> u32 {
+    fn read_ext_u16(&mut self, addr: u32) -> u32 {
         self.read16(addr) as u32
     }
 
-    pub fn write8(&mut self, addr: u32, value: u8) {
+    fn write8(&mut self, addr: u32, value: u8) {
         let cycle = self.debug_write8(addr, value);
         self.cycles += cycle;
     }
-    pub fn write16(&mut self, addr: u32, value: u16) {
+    fn write16(&mut self, addr: u32, value: u16) {
         let cycle = self.debug_write16(addr, value);
         self.cycles += cycle;
     }
-    pub fn write32(&mut self, addr: u32, value: u32) {
+    fn write32(&mut self, addr: u32, value: u32) {
         let cycle = self.debug_write32(addr, value);
         self.cycles += cycle;
     }
 
-    pub fn exec_thumb_slow(&mut self, addr: u32) -> u16 {
+    fn exec_thumb_slow(&mut self, addr: u32) -> u16 {
         self.pc_inside_bios = addr >> 24 == 0;
         self.read16(addr)
     }
 
-    pub fn exec_arm_slow(&mut self, addr: u32) -> u32 {
+    fn exec_arm_slow(&mut self, addr: u32) -> u32 {
         self.pc_inside_bios = addr >> 24 == 0;
         self.read32(addr)
+    }
+
+    fn add_internal_cycles(&mut self, cycles: i64) {
+        // TODO: Do GamePak prefetch buffer
+        self.cycles += cycles;
     }
 }
 

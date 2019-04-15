@@ -9,6 +9,7 @@ extern crate bitintr;
 extern crate regex;
 #[macro_use]
 extern crate lazy_static;
+extern crate core;
 
 #[macro_use]
 mod log;
@@ -23,21 +24,20 @@ mod timer;
 mod gamepak;
 mod dma;
 mod iomap;
+mod bus;
 
-use arm7tdmi::Arm7TDMI;
 use interconnect::Interconnect;
 use debugger::Debugger;
 use std::error::Error;
 use std::fs;
 
 fn main() -> Result<(), Box<Error>> {
-    let bios = fs::read("../roms/bios.bin")?;
-    let rom = fs::read("../roms/Pac-Man Collection.gba")?;
+    let bios = fs::read("roms/bios.bin")?;
+    let rom = fs::read("roms/Pac-Man Collection.gba")?;
     let mut interconnect = Interconnect::new(&bios, &rom);
-    let mut arm = Arm7TDMI::new();
-    arm.signal_reset(&mut interconnect);
+    interconnect.arm.signal_reset();
 
-    let mut debugger = Debugger::new(arm, interconnect);
+    let mut debugger = Debugger::new(interconnect);
 
     debugger.run();
     Ok(())

@@ -7,7 +7,8 @@ use std::collections::{ HashMap, HashSet };
 
 use num::{ Num, PrimInt };
 
-use arm7tdmi::{ StepEvent, Arm7TDMI };
+use arm7tdmi::StepEvent;
+use bus::Bus;
 use interconnect::Interconnect;
 use disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use log::{ self, LogKind, LogLevel };
@@ -199,13 +200,11 @@ enum State {
 
 #[derive(Clone)]
 struct EmulationState {
-    arm: Arm7TDMI,
-    interconnect: Interconnect,
+    interconnect: Box<Interconnect>,
 }
 
 pub struct Debugger {
-    arm: Arm7TDMI,
-    interconnect: Interconnect,
+    interconnect: Box<Interconnect>,
     buffer: FrameBuffer,
     save_states: HashMap<String, EmulationState>,
     temp_breakpoints: HashSet<u32>,
@@ -213,9 +212,8 @@ pub struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(arm: Arm7TDMI, interconnect: Interconnect) -> Debugger {
+    pub fn new(interconnect: Box<Interconnect>) -> Debugger {
         Debugger {
-            arm,
             interconnect,
             buffer: FrameBuffer::new(),
             save_states: HashMap::new(),
@@ -225,8 +223,8 @@ impl Debugger {
     }
 
     fn disassemble(&mut self) {
-        let thumb_mode = self.arm.cpsr.get_thumb_mode();
-        let addr = self.arm.current_pc();
+        let thumb_mode = self.interconnect.arm.cpsr.get_thumb_mode();
+        let addr = self.interconnect.arm.current_pc();
         if thumb_mode {
             let op = self.interconnect.exec_thumb_slow(addr);
             let dis = disassemble_thumb_opcode(op as u32, addr);
@@ -239,18 +237,18 @@ impl Debugger {
     }
 
     fn step(&mut self, print_state: bool) -> bool {
-        self.interconnect.step(&mut self.arm, &mut self.buffer);
+        self.interconnect.step(&mut self.buffer);
 
         let event = StepEvent::None;
         if print_state {
-            println!("{:?}\n", self.arm);
+            println!("{:?}\n", self.interconnect.arm);
         }
         match event {
             StepEvent::TriggerWatchpoint(addr) => {
                 println!("Watchpoint triggered at {:06X}", addr);
                 if self.temp_watchpoints.contains(&addr) {
                     self.temp_watchpoints.remove(&addr);
-                    self.arm.watchpoints.remove(addr);
+                    self.interconnect.arm.watchpoints.remove(addr);
                 }
                 true
             }
@@ -258,7 +256,7 @@ impl Debugger {
                 println!("Breakpoint triggered at {:06X}", addr);
                 if self.temp_breakpoints.contains(&addr) {
                     self.temp_breakpoints.remove(&addr);
-                    self.arm.breakpoints.remove(addr);
+                    self.interconnect.arm.breakpoints.remove(addr);
                 }
                 true
             }
@@ -344,34 +342,34 @@ impl Debugger {
         use self::Command::*;
         match cmd {
             AddBreakpoint(addr) => {
-                self.arm.breakpoints.insert(addr);
+                self.interconnect.arm.breakpoints.insert(addr);
             }
             AddTempBreakpoint(addr) => {
-                self.arm.breakpoints.insert(addr);
+                self.interconnect.arm.breakpoints.insert(addr);
                 self.temp_breakpoints.insert(addr);
             }
             DelBreakpoint(addr) => {
-                self.arm.breakpoints.remove(addr);
+                self.interconnect.arm.breakpoints.remove(addr);
             }
             AddWatchpoint(addr) => {
-                self.arm.watchpoints.insert(addr);
+                self.interconnect.arm.watchpoints.insert(addr);
             }
             AddTempWatchpoint(addr) => {
-                self.arm.watchpoints.insert(addr);
+                self.interconnect.arm.watchpoints.insert(addr);
                 self.temp_watchpoints.insert(addr);
             }
             DelWatchpoint(addr) => {
-                self.arm.watchpoints.remove(addr);
+                self.interconnect.arm.watchpoints.remove(addr);
             }
 
             ListBreakpoints => {
-                for (i, b) in self.arm.breakpoints.iter().enumerate() {
+                for (i, b) in self.interconnect.arm.breakpoints.iter().enumerate() {
                     println!("  {}: {:06X}", i, b);
                 }
             }
 
             ListWatchpoints => {
-                for (i, w) in self.arm.watchpoints.iter().enumerate() {
+                for (i, w) in self.interconnect.arm.watchpoints.iter().enumerate() {
                     println!("  {}: {:06X}", i, w);
                 }
             }
@@ -383,20 +381,18 @@ impl Debugger {
                 return State::Running;
             }
             Goto(addr) => {
-                self.arm.branch_to(&mut self.interconnect, addr);
+                self.interconnect.arm.branch_to(addr);
             }
 
             SaveState(name) => {
                 self.save_states.insert(name, EmulationState {
-                    arm: self.arm.clone(),
                     interconnect: self.interconnect.clone(),
                 });
             }
             RestoreState(name) => {
                 if let Some(mut state) = self.save_states.get(&name).cloned() {
-                    state.arm.watchpoints = self.arm.watchpoints.clone();
-                    state.arm.breakpoints = self.arm.breakpoints.clone();
-                    self.arm = state.arm;
+                    state.interconnect.arm.watchpoints = self.interconnect.arm.watchpoints.clone();
+                    state.interconnect.arm.breakpoints = self.interconnect.arm.breakpoints.clone();
                     self.interconnect = state.interconnect;
                 } else {
                     println!("No save state exists named '{}'", name);
@@ -427,7 +423,7 @@ impl Debugger {
             }
 
             ListRegs => {
-                println!("{:?}", self.arm);
+                println!("{:?}", self.interconnect.arm);
             }
 
             Log(level, kinds) => {

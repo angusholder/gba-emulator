@@ -172,6 +172,7 @@ impl Buffer {
     pub fn write16(&mut self, index: u32, value: u16) {
         assert!(index & 1 == 0);
         check_bounds!(self.buffer, index + 1);
+        (value as u64).to_le_bytes();
         unsafe { *(self.buffer.as_ptr().offset(index as isize) as * mut u16) = value; }
     }
 

@@ -1,16 +1,16 @@
 use std::cmp;
 
 use super::{ Arm7TDMI, REG_PC, REG_LR, ConditionCode };
-use interconnect::Interconnect;
 use super::core_common::*;
 use log::*;
 use arm7tdmi::disassemble::{ DisResult, err };
 
 use num::FromPrimitive;
+use bus::Bus;
 
-pub fn step_arm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+pub fn step_arm(arm: &mut Arm7TDMI, op: ArmOp) {
     if arm.eval_condition_code(op.cond()) {
-        arm.arm_enc_table.lookup(op)(arm, interconnect, op);
+        arm.arm_enc_table.lookup(op)(arm, op);
     }
 }
 
@@ -33,21 +33,21 @@ impl ArmOp {
     pub fn cond(&self) -> ConditionCode { ConditionCode::from_u32(self.field(28, 4)).unwrap() }
 }
 
-pub type ArmEmuFn = fn(&mut Arm7TDMI, &mut Interconnect, ArmOp);
+pub type ArmEmuFn = fn(&mut Arm7TDMI, ArmOp);
 
-fn unhandled(_: &mut Arm7TDMI, _: &mut Interconnect, op: u32) {
+fn unhandled(_: &mut Arm7TDMI, op: u32) {
     error!(CPU, "Arm instruction {:08X} wasn't handled by the decoder", op);
 }
 
-fn op_coprocessor(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
-    arm.signal_undef(interconnect);
+fn op_coprocessor(arm: &mut Arm7TDMI, _: ArmOp) {
+    arm.signal_undef();
 }
 
-pub fn op_und(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
-    arm.signal_undef(interconnect);
+pub fn op_und(arm: &mut Arm7TDMI, _: ArmOp) {
+    arm.signal_undef();
 }
 
-fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_swp(arm: &mut Arm7TDMI, op: ArmOp) {
     let rm_index = op.reg(0);
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
@@ -61,14 +61,14 @@ fn op_swp(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     let rm = arm.regs[rm_index];
 
     check_watchpoint!(arm, addr);
-    let old = interconnect.read32(addr);
+    let old = arm.bus.read32(addr);
     arm.regs[rd_index] = old;
-    interconnect.write32(addr, rm);
+    arm.bus.write32(addr, rm);
 
-    interconnect.add_internal_cycles(1);
+    arm.bus.add_internal_cycles(1);
 }
 
-fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_swpb(arm: &mut Arm7TDMI, op: ArmOp) {
     let rm_index = op.reg(0);
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
@@ -82,16 +82,16 @@ fn op_swpb(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     let rm = arm.regs[rm_index];
 
     check_watchpoint!(arm, addr);
-    let old = interconnect.read8(addr) as u32;
+    let old = arm.bus.read8(addr) as u32;
     arm.regs[rd_index] = old;
-    interconnect.write8(addr, rm as u8);
+    arm.bus.write8(addr, rm as u8);
 
-    interconnect.add_internal_cycles(1);
+    arm.bus.add_internal_cycles(1);
 }
 
-fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_mrs_reg(arm: &mut Arm7TDMI, op: ArmOp) {
     if op.field(0, 12) != 0 || op.field(16, 4) != 0xF {
-        return op_und(arm, interconnect, op);
+        return op_und(arm, op);
     }
 
     let rd_index = op.reg(12);
@@ -115,9 +115,9 @@ fn op_mrs_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
 
 // TODO: Split this into one function per entry in the ARM PDF, it's confusing currently
 //       and I can't be sure it's correct.
-fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_msr_reg(arm: &mut Arm7TDMI, op: ArmOp) {
     if op.field(8, 12) & !0x100 != 0b1000_1111_0000 {
-        return op_und(arm, interconnect, op);
+        return op_und(arm, op);
     }
 
     let flags_only = !op.flag(16);
@@ -151,9 +151,9 @@ fn op_msr_reg(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
     }
 }
 
-fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_msr_flag_imm(arm: &mut Arm7TDMI, op: ArmOp) {
     if op.field(12, 8) != 0b1000_1111 {
-        return op_und(arm, interconnect, op);
+        return op_und(arm, op);
     }
 
     let imm = op.field(0, 8);
@@ -174,20 +174,20 @@ fn op_msr_flag_imm(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmO
     }
 }
 
-fn op_bx(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, op: ArmOp) {
+fn op_bx(arm: &mut Arm7TDMI, op: ArmOp) {
     if op.field(8, 12) != 0xFFF {
-        return op_und(arm, interconnect, op);
+        return op_und(arm, op);
     }
 
     let rn = arm.regs[op.reg(0)];
-    arm.branch_exchange(interconnect, rn);
+    arm.branch_exchange(rn);
 }
 
-fn op_swi(arm: &mut Arm7TDMI, interconnect: &mut Interconnect, _: ArmOp) {
-    arm.signal_swi(interconnect);
+fn op_swi(arm: &mut Arm7TDMI, _: ArmOp) {
+    arm.signal_swi();
 }
 
-fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn mul(arm: &mut Arm7TDMI, op: ArmOp) {
     let rd_index = op.reg(16);
     let rn_index = op.reg(12);
     let rs_index = op.reg(8);
@@ -206,10 +206,10 @@ fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let rs = arm.regs[rs_index];
     let rm = arm.regs[rm_index];
 
-    ic.add_internal_cycles((rs.leading_zeros() / 8) as _);
+    arm.bus.add_internal_cycles((rs.leading_zeros() / 8) as _);
 
     let result = if acc {
-        ic.add_internal_cycles(1);
+        arm.bus.add_internal_cycles(1);
         rm.wrapping_mul(rs).wrapping_add(rn)
     } else {
         rm.wrapping_mul(rs)
@@ -222,7 +222,7 @@ fn mul(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     }
 }
 
-fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn mul_long(arm: &mut Arm7TDMI, op: ArmOp) {
     let rd_hi_index = op.reg(16);
     let rd_lo_index = op.reg(12);
     let rs_index = op.reg(8);
@@ -243,13 +243,13 @@ fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let rs = arm.regs[rs_index];
 
     if signed {
-        ic.add_internal_cycles((1 + cmp::max(rs.leading_zeros(), (!rs).leading_zeros()) / 8) as _);
+        arm.bus.add_internal_cycles((1 + cmp::max(rs.leading_zeros(), (!rs).leading_zeros()) / 8) as _);
     } else {
-        ic.add_internal_cycles((1 + rs.leading_zeros() / 8) as _);
+        arm.bus.add_internal_cycles((1 + rs.leading_zeros() / 8) as _);
     }
 
     if acc {
-        ic.add_internal_cycles(1);
+        arm.bus.add_internal_cycles(1);
     }
 
     let result: u64 = if signed {
@@ -287,9 +287,7 @@ fn mul_long(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     }
 }
 
-fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, f: F)
-    where F: Fn(&mut Arm7TDMI, &mut Interconnect, u16, u32) -> u32
-{
+fn block_data_transfer(arm: &mut Arm7TDMI, op: ArmOp, f: impl Fn(&mut Arm7TDMI, u16, u32) -> u32) {
     let rn_index = op.reg(16);
 //    let load = op.flag(20);
     let writeback = op.flag(21);
@@ -304,7 +302,7 @@ fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, 
 
     let mut addr = arm.regs[rn_index];
 
-    addr = f(arm, ic, reglist, addr);
+    addr = f(arm, reglist, addr);
 
     if writeback {
         assert!(rn_index != REG_PC);
@@ -312,52 +310,52 @@ fn block_data_transfer<F>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, 
     }
 }
 
-fn ldmia(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn ldmia(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 { // Post-increment
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            let value = ic.read32(addr);
-            arm.set_reg(ic, i, value);
+            let value = arm.bus.read32(addr);
+            arm.set_reg(i, value);
             addr += 4;
         }
     }
     addr
 }
 
-fn ldmib(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn ldmib(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             addr += 4;
             check_watchpoint!(arm, addr);
-            let value = ic.read32(addr);
-            arm.set_reg(ic, i, value);
+            let value = arm.bus.read32(addr);
+            arm.set_reg(i, value);
         }
     }
     addr
 }
 
-fn ldmda(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn ldmda(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     let new_base = addr - reglist.count_ones() * 4;
     addr = addr - reglist.count_ones() * 4 + 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            let value = ic.read32(addr);
-            arm.set_reg(ic, i, value);
+            let value = arm.bus.read32(addr);
+            arm.set_reg(i, value);
             addr += 4;
         }
     }
     new_base
 }
 
-fn ldmdb(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn ldmdb(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     let new_base = addr - reglist.count_ones() * 4;
     addr = addr - reglist.count_ones() * 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            let value = ic.read32(addr);
-            arm.set_reg(ic, i, value);
+            let value = arm.bus.read32(addr);
+            arm.set_reg(i, value);
             addr += 4;
         }
     }
@@ -373,55 +371,59 @@ fn get_reg(arm: &Arm7TDMI, index: usize) -> u32 {
     }
 }
 
-fn stmia(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn stmia(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            ic.write32(addr, get_reg(arm, i));
+            let reg = get_reg(arm, i);
+            arm.bus.write32(addr, reg);
             addr += 4;
         }
     }
     addr
 }
 
-fn stmib(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn stmib(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             addr += 4;
             check_watchpoint!(arm, addr);
-            ic.write32(addr, get_reg(arm, i));
+            let reg = get_reg(arm, i);
+            arm.bus.write32(addr, reg);
         }
     }
     addr
 }
 
-fn stmda(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn stmda(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     let new_base = addr - reglist.count_ones() * 4;
     addr = addr - reglist.count_ones() * 4 + 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            ic.write32(addr, get_reg(arm, i));
+            let reg = get_reg(arm, i);
+            arm.bus.write32(addr, reg);
             addr += 4;
         }
     }
     new_base
 }
 
-fn stmdb(arm: &mut Arm7TDMI, ic: &mut Interconnect, reglist: u16, mut addr: u32) -> u32 {
+fn stmdb(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     let new_base = addr - reglist.count_ones() * 4;
     addr = addr - reglist.count_ones() * 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             check_watchpoint!(arm, addr);
-            ic.write32(addr, get_reg(arm, i));
+            let reg = get_reg(arm, i);
+            arm.bus.write32(addr, reg);
             addr += 4;
         }
     }
     new_base
 }
 
-fn branch(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn branch(arm: &mut Arm7TDMI, op: ArmOp) {
     let offset = op.field(0, 24);
     let link = op.flag(24);
 
@@ -432,7 +434,7 @@ fn branch(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     if link {
         arm.regs[REG_LR] = pc - 4;
     }
-    arm.branch_to(ic, addr);
+    arm.branch_to(addr);
 }
 
 fn get_rotated_immediate(op: ArmOp) -> u32 {
@@ -441,7 +443,7 @@ fn get_rotated_immediate(op: ArmOp) -> u32 {
     imm.rotate_right(rotate * 2)
 }
 
-fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, setcc: bool) -> u32 {
+fn get_shifted_register(arm: &mut Arm7TDMI, op: ArmOp, setcc: bool) -> u32 {
     const LSL: u32 = 0b00;
     const LSR: u32 = 0b01;
     const ASR: u32 = 0b10;
@@ -453,7 +455,7 @@ fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, se
 
     let rm = arm.regs[rm_index];
     let shift_amount = if shift_by_reg {
-        ic.add_internal_cycles(1);
+        arm.bus.add_internal_cycles(1);
         arm.regs[op.reg(8)]
     } else {
         op.field(7, 5)
@@ -473,7 +475,7 @@ fn get_shifted_register(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp, se
     shift_func(arm, rm, shift_amount)
 }
 
-fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn data_processing(arm: &mut Arm7TDMI, op: ArmOp) {
     const AND: u32 = 0b0000;
     const EOR: u32 = 0b0001;
     const SUB: u32 = 0b0010;
@@ -501,7 +503,7 @@ fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let op2 = if imm {
         get_rotated_immediate(op)
     } else {
-        get_shifted_register(arm, ic, op, setcc)
+        get_shifted_register(arm, op, setcc)
     };
 
     let result = match opcode {
@@ -548,12 +550,20 @@ fn data_processing(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     match opcode {
         TST | TEQ | CMP | CMN => {}
         _ => {
-            arm.set_reg(ic, rd_index, result);
+            arm.set_reg(rd_index, result);
         }
     }
 }
 
-fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn ldr(arm: &mut Arm7TDMI, op: ArmOp) {
+    single_data_load(arm, op, |bus, addr| bus.read32(addr));
+}
+
+fn ldrb(arm: &mut Arm7TDMI, op: ArmOp) {
+    single_data_load(arm, op, |bus, addr| u32::from(bus.read8(addr)));
+}
+
+fn single_data_load(arm: &mut Arm7TDMI, op: ArmOp, load: impl Fn(&mut Bus, u32) -> u32) {
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
     let writeback = op.flag(21);
@@ -566,7 +576,7 @@ fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op
     let mut offset = if imm {
         op.field(0, 12)
     } else {
-        get_shifted_register(arm, ic, op, false)
+        get_shifted_register(arm, op, false)
     };
 
     if !up {
@@ -577,9 +587,9 @@ fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op
 
     check_watchpoint!(arm, addr);
 
-    ic.add_internal_cycles(1);
-    let value = T::LOAD(ic, addr);
-    arm.set_reg(ic, rd_index, value);
+    arm.bus.add_internal_cycles(1);
+    let value = load(&mut *arm.bus, addr);
+    arm.set_reg(rd_index, value);
 
     if writeback {
         // TODO: Handle PC?
@@ -587,7 +597,15 @@ fn single_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op
     }
 }
 
-fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn str(arm: &mut Arm7TDMI, op: ArmOp) {
+    single_data_store(arm, op, |bus, addr, value| bus.write32(addr, value));
+}
+
+fn strb(arm: &mut Arm7TDMI, op: ArmOp) {
+    single_data_store(arm, op, |bus, addr, value| bus.write8(addr, value as u8));
+}
+
+fn single_data_store(arm: &mut Arm7TDMI, op: ArmOp, store: impl Fn(&mut Bus, u32, u32)) {
     let rd_index = op.reg(12);
     let rn_index = op.reg(16);
     let writeback = op.flag(21);
@@ -601,7 +619,7 @@ fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect,
     let mut offset = if imm {
         op.field(0, 12)
     } else {
-        get_shifted_register(arm, ic, op, false)
+        get_shifted_register(arm, op, false)
     };
 
     if !up {
@@ -612,15 +630,27 @@ fn single_data_store<T: store::Store>(arm: &mut Arm7TDMI, ic: &mut Interconnect,
 
     check_watchpoint!(arm, addr);
 
-    ic.add_internal_cycles(1);
-    T::STORE(ic, addr, T::from(rd).unwrap());
+    arm.bus.add_internal_cycles(1);
+    store(&mut *arm.bus, addr, rd);
 
     if writeback {
-        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
+        arm.set_reg(rn_index, rn.wrapping_add(offset));
     }
 }
 
-fn sh_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn ldrh(arm: &mut Arm7TDMI, op: ArmOp) {
+    sh_data_load(arm, op, |bus, addr| bus.read_ext_u16(addr));
+}
+
+fn ldrsb(arm: &mut Arm7TDMI, op: ArmOp) {
+    sh_data_load(arm, op, |bus, addr| bus.read_ext_i8(addr));
+}
+
+fn ldrsh(arm: &mut Arm7TDMI, op: ArmOp) {
+    sh_data_load(arm, op, |bus, addr| bus.read_ext_i16(addr));
+}
+
+fn sh_data_load(arm: &mut Arm7TDMI, op: ArmOp, load: impl Fn(&mut Bus, u32) -> u32) {
     let rn_index = op.reg(16);
     let rd_index = op.reg(12);
     let writeback = op.flag(21);
@@ -643,17 +673,17 @@ fn sh_data_load<T: load::Load>(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: Ar
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
     check_watchpoint!(arm, addr);
 
-    ic.add_internal_cycles(1); // internal cycle for address calculation
+    arm.bus.add_internal_cycles(1); // internal cycle for address calculation
 
-    let value = T::LOAD(ic, addr);
-    arm.set_reg(ic, rd_index, value);
+    let value = load(&mut *arm.bus, addr);
+    arm.set_reg(rd_index, value);
 
     if writeback {
-        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
+        arm.set_reg(rn_index, rn.wrapping_add(offset));
     }
 }
 
-fn half_data_store(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
+fn strh(arm: &mut Arm7TDMI, op: ArmOp) {
     let rn_index = op.reg(16);
     let rd_index = op.reg(12);
     let writeback = op.flag(21);
@@ -677,10 +707,10 @@ fn half_data_store(arm: &mut Arm7TDMI, ic: &mut Interconnect, op: ArmOp) {
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
     check_watchpoint!(arm, addr);
 
-    ic.write16(addr, rd as u16);
+    arm.bus.write16(addr, rd as u16);
 
     if writeback {
-        arm.set_reg(ic, rn_index, rn.wrapping_add(offset));
+        arm.set_reg(rn_index, rn.wrapping_add(offset));
     }
 }
 
@@ -702,29 +732,29 @@ pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
 //    ("011_ ____ ____ ____ ____ ___1 ____", "UNDEF*", op_und),
 
     ("1000 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIA<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, ldmia)
+        |arm, op| block_data_transfer(arm, op, ldmia)
     ),
     ("1001 1SW1 nnnn rrrr rrrr rrrr rrrr", "LDMIB<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, ldmib)
+        |arm, op| block_data_transfer(arm, op, ldmib)
     ),
     ("1000 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDA<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, ldmda)
+        |arm, op| block_data_transfer(arm, op, ldmda)
     ),
     ("1001 0SW1 nnnn rrrr rrrr rrrr rrrr", "LDMDB<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, ldmdb)
+        |arm, op| block_data_transfer(arm, op, ldmdb)
     ),
 
     ("1000 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIA<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, stmia)
+        |arm, op| block_data_transfer(arm, op, stmia)
     ),
     ("1001 1SW0 nnnn rrrr rrrr rrrr rrrr", "STMIB<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, stmib)
+        |arm, op| block_data_transfer(arm, op, stmib)
     ),
     ("1000 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDA<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, stmda)
+        |arm, op| block_data_transfer(arm, op, stmda)
     ),
     ("1001 0SW0 nnnn rrrr rrrr rrrr rrrr", "STMDB<S>* %Rn<wb>, { %+Rr }",
-        |arm, ic, op| block_data_transfer(arm, ic, op, stmdb)
+        |arm, op| block_data_transfer(arm, op, stmdb)
     ),
 
     ("1010 oooo oooo oooo oooo oooo oooo", "B* $offset[o]", branch),
@@ -771,25 +801,25 @@ pub static ARM_DISPATCH_TABLE: &[(&str, &str, ArmEmuFn)] = &[
     ("000 1111 S nnnn dddd iiii viiv iiii", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
     ("001 1111 S nnnn dddd iiii iiii iiii", "MVN<S>* %Rd, %Rn, <op2>", data_processing),
 
-    ("010P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, #offset[i]]", single_data_load::<u32>),
-    ("011P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, <op2_reg>]", single_data_load::<u32>),
-    ("010P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, #offset[i]]", single_data_load::<u8>),
-    ("011P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, <op2_reg>]", single_data_load::<u8>),
+    ("010P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, #offset[i]]", ldr),
+    ("011P U0W1 nnnn dddd iiii iiii iiii", "LDR* %Rd, [%Rn, <op2_reg>]", ldr),
+    ("010P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, #offset[i]]", ldrb),
+    ("011P U1W1 nnnn dddd iiii iiii iiii", "LDRB* %Rd, [%Rn, <op2_reg>]", ldrb),
 
-    ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, #offset[i]]", single_data_store::<u32>),
-    ("011P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", single_data_store::<u32>),
-    ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", single_data_store::<u8>),
-    ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", single_data_store::<u8>),
+    ("010P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, #offset[i]]", str),
+    ("011P U0W0 nnnn dddd iiii iiii iiii", "STR* %Rd, [%Rn, <op2_reg>]", str),
+    ("010P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, #offset[i]]", strb),
+    ("011P U1W0 nnnn dddd iiii iiii iiii", "STRB* %Rd, [%Rn, <op2_reg>]", strb),
 
-    ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH* %Rd, [%Rn, %Rm]", sh_data_load::<u16>),
-    ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB* %Rd, [%Rn, %Rm]", sh_data_load::<i8>),
-    ("000P U0W1 nnnn dddd 0000 1111 mmmm", "LDRSH* %Rd, [%Rn, %Rm]", sh_data_load::<i16>),
-    ("000P U0W0 nnnn dddd 0000 1011 mmmm", "STRH* %Rd, [%Rn, %Rm]", half_data_store),
+    ("000P U0W1 nnnn dddd 0000 1011 mmmm", "LDRH* %Rd, [%Rn, %Rm]", ldrh),
+    ("000P U0W1 nnnn dddd 0000 1101 mmmm", "LDRSB* %Rd, [%Rn, %Rm]", ldrsb),
+    ("000P U0W1 nnnn dddd 0000 1111 mmmm", "LDRSH* %Rd, [%Rn, %Rm]", ldrsh),
+    ("000P U0W0 nnnn dddd 0000 1011 mmmm", "STRH* %Rd, [%Rn, %Rm]", strh),
 
-    ("000P U1W1 nnnn dddd iiii 1011 iiii", "LDRH* %Rd, [%Rn, #[i]]", sh_data_load::<u16>),
-    ("000P U1W1 nnnn dddd iiii 1101 iiii", "LDRSB* %Rd, [%Rn, #[i]]", sh_data_load::<i8>),
-    ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH* %Rd, [%Rn, #[i]]", sh_data_load::<i16>),
-    ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH* %Rd, [%Rn, #[i]]", half_data_store),
+    ("000P U1W1 nnnn dddd iiii 1011 iiii", "LDRH* %Rd, [%Rn, #[i]]", ldrh),
+    ("000P U1W1 nnnn dddd iiii 1101 iiii", "LDRSB* %Rd, [%Rn, #[i]]", ldrsb),
+    ("000P U1W1 nnnn dddd iiii 1111 iiii", "LDRSH* %Rd, [%Rn, #[i]]", ldrsh),
+    ("000P U1W0 nnnn dddd iiii 1011 iiii", "STRH* %Rd, [%Rn, #[i]]", strh),
 ];
 
 fn process_arm(fmt: &str, exec: ArmEmuFn) -> DisResult<ArmEnc> {

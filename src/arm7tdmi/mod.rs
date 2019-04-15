@@ -8,12 +8,12 @@ use std::fmt;
 
 use num::FromPrimitive;
 
-use interconnect::Interconnect;
 use utils::OrderedSet;
 use arm7tdmi::core_thumb::ThumbEncTable;
 use arm7tdmi::core_arm::ArmEncTable;
 use arm7tdmi::core_arm::ArmOp;
 use arm7tdmi::core_thumb::ThumbOp;
+use bus::BusPtr;
 
 enum_from_primitive! {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -191,6 +191,9 @@ pub struct Arm7TDMI {
     pub regs: [u32; 16],
     pub cpsr: StatusRegister,
 
+    pub bus: BusPtr,
+    pub prefetch: [u32; 2],
+
     // Supervisor Mode:
     svc_sp: u32,
     svc_lr: u32,
@@ -234,6 +237,9 @@ impl Arm7TDMI {
             regs: Default::default(),
             cpsr: Default::default(),
 
+            bus: BusPtr::null(),
+            prefetch: [0, 0],
+
             svc_sp: 0,
             svc_lr: 0,
             svc_spsr: Default::default(),
@@ -254,11 +260,11 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn set_reg(&mut self, ic: &mut Interconnect, index: usize, value: u32) {
+    pub fn set_reg(&mut self, index: usize, value: u32) {
         if index != REG_PC {
             self.regs[index] = value;
         } else {
-            self.branch_to(ic, value);
+            self.branch_to(value);
         }
     }
 
@@ -335,24 +341,24 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn branch_to(&mut self, interconnect: &mut Interconnect, addr: u32) {
+    pub fn branch_to(&mut self, addr: u32) {
         let step = self.get_op_size();
         if self.cpsr.thumb_mode {
             debug_assert!(addr & 1 == 0);
-            interconnect.prefetch[0] = interconnect.exec_thumb_slow(addr) as u32;
-            interconnect.prefetch[1] = interconnect.exec_thumb_slow(addr + step) as u32;
+            self.prefetch[0] = self.bus.exec_thumb_slow(addr) as u32;
+            self.prefetch[1] = self.bus.exec_thumb_slow(addr + step) as u32;
             self.regs[REG_PC] = addr + step;
         } else {
             debug_assert!(addr & 3 == 0);
-            interconnect.prefetch[0] = interconnect.exec_arm_slow(addr);
-            interconnect.prefetch[1] = interconnect.exec_arm_slow(addr + step);
+            self.prefetch[0] = self.bus.exec_arm_slow(addr);
+            self.prefetch[1] = self.bus.exec_arm_slow(addr + step);
             self.regs[REG_PC] = addr + step;
         }
     }
 
-    pub fn branch_exchange(&mut self, interconnect: &mut Interconnect, addr: u32) {
+    pub fn branch_exchange(&mut self, addr: u32) {
         self.cpsr.thumb_mode = (addr & 1) != 0;
-        self.branch_to(interconnect, addr & !1u32);
+        self.branch_to(addr & !1u32);
     }
 
     pub fn get_op_size(&self) -> u32 {
@@ -363,37 +369,37 @@ impl Arm7TDMI {
         }
     }
 
-    pub fn signal_reset(&mut self, interconnect: &mut Interconnect) {
+    pub fn signal_reset(&mut self) {
         const INTVEC_RESET: u32 = 0x0;
 
         self.switch_mode(OperatingMode::Supervisor);
         self.cpsr.fiq_disable = true;
         self.cpsr.irq_disable = true;
         self.cpsr.thumb_mode = false;
-        self.branch_to(interconnect, INTVEC_RESET);
+        self.branch_to(INTVEC_RESET);
     }
 
-    pub fn signal_undef(&mut self, interconnect: &mut Interconnect) {
+    pub fn signal_undef(&mut self) {
         const INTVEC_UNDEFINED: u32 = 0x4;
 
         self.und_spsr = self.cpsr;
         self.und_lr = self.regs[REG_PC] + self.get_op_size();
         self.switch_mode(OperatingMode::Undefined);
         self.cpsr.thumb_mode = false;
-        self.branch_to(interconnect, INTVEC_UNDEFINED);
+        self.branch_to(INTVEC_UNDEFINED);
     }
 
-    pub fn signal_swi(&mut self, interconnect: &mut Interconnect) {
+    pub fn signal_swi(&mut self) {
         const INTVEC_SWI: u32 = 0x8;
 
         self.svc_spsr = self.cpsr;
         self.svc_lr = self.regs[REG_PC] + self.get_op_size();
         self.switch_mode(OperatingMode::Supervisor);
         self.cpsr.thumb_mode = false;
-        self.branch_to(interconnect, INTVEC_SWI);
+        self.branch_to(INTVEC_SWI);
     }
 
-    pub fn signal_irq(&mut self, interconnect: &mut Interconnect) {
+    pub fn signal_irq(&mut self) {
         const INTVEC_IRQ: u32 = 0x18;
 
         if self.cpsr.irq_disable {
@@ -403,14 +409,14 @@ impl Arm7TDMI {
         self.irq_lr = self.regs[REG_PC] + 4;
         self.switch_mode(OperatingMode::Irq);
         self.cpsr.thumb_mode = false;
-        self.branch_to(interconnect, INTVEC_IRQ);
+        self.branch_to(INTVEC_IRQ);
     }
 
     pub fn current_pc(&self) -> u32 {
         self.regs[REG_PC] - self.get_op_size()
     }
 
-    pub fn step(&mut self, interconnect: &mut Interconnect) {
+    pub fn step(&mut self) {
         use self::core_thumb::step_thumb;
         use self::core_arm::step_arm;
 
@@ -421,19 +427,19 @@ impl Arm7TDMI {
         self.regs[REG_PC] += self.get_op_size();
 
         let next_op = if self.cpsr.thumb_mode {
-            interconnect.exec_thumb_slow(self.regs[REG_PC]) as u32
+            self.bus.exec_thumb_slow(self.regs[REG_PC]) as u32
         } else {
-            interconnect.exec_arm_slow(self.regs[REG_PC])
+            self.bus.exec_arm_slow(self.regs[REG_PC])
         };
 
-        let op = interconnect.prefetch[0];
-        interconnect.prefetch[0] = interconnect.prefetch[1];
-        interconnect.prefetch[1] = next_op;
+        let op = self.prefetch[0];
+        self.prefetch[0] = self.prefetch[1];
+        self.prefetch[1] = next_op;
 
         if self.cpsr.thumb_mode {
-            step_thumb(self, interconnect, ThumbOp::new(op as u16))
+            step_thumb(self, ThumbOp::new(op as u16))
         } else {
-            step_arm(self, interconnect, ArmOp::new(op))
+            step_arm(self, ArmOp::new(op))
         }
     }
 }

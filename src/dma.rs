@@ -1,5 +1,6 @@
 use num::FromPrimitive;
 
+use bus::Bus;
 use interconnect::{ Interconnect, IrqFlags };
 use log::*;
 use utils::Latched;

@@ -138,38 +138,6 @@ pub mod cond {
     pub struct Le; impl Cond for Le { const CC: ConditionCode = ConditionCode::Le; }
 }
 
-pub mod load {
-    use interconnect::Interconnect;
-    use num::NumCast;
-
-    type LoadFn = fn(&mut Interconnect, u32) -> u32;
-
-    pub trait Load: NumCast {
-        const LOAD: LoadFn;
-    }
-
-    impl Load for u8  { const LOAD: LoadFn = Interconnect::read_ext_u8; }
-    impl Load for i8  { const LOAD: LoadFn = Interconnect::read_ext_i8; }
-    impl Load for u16 { const LOAD: LoadFn = Interconnect::read_ext_u16; }
-    impl Load for i16 { const LOAD: LoadFn = Interconnect::read_ext_i16; }
-    impl Load for u32 { const LOAD: LoadFn = Interconnect::read32; }
-}
-
-pub mod store {
-    use interconnect::Interconnect;
-    use num::NumCast;
-
-    type StoreFn<T> = fn(&mut Interconnect, u32, T);
-
-    pub trait Store: NumCast {
-        const STORE: StoreFn<Self>;
-    }
-
-    impl Store for u8  { const STORE: StoreFn<Self> = Interconnect::write8; }
-    impl Store for u16 { const STORE: StoreFn<Self> = Interconnect::write16; }
-    impl Store for u32 { const STORE: StoreFn<Self> = Interconnect::write32; }
-}
-
 pub enum Bit {
     Any,
     Zero, // 0
