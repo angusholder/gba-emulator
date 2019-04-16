@@ -1,19 +1,19 @@
-use std::thread;
+use std::{thread, ptr};
 use std::io;
 use std::fmt;
-use std::io::Write;
+use std::io::{Write, Read};
 use std::sync::mpsc;
 use std::collections::{ HashMap, HashSet };
 
 use num_traits::{ Num, PrimInt };
 
-use crate::arm7tdmi::StepEvent;
+use crate::arm7tdmi::{StepEvent, ARM_REGS};
 use crate::bus::Bus;
 use crate::gba::Gba;
 use crate::disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use crate::log::{ self, LogKind, LogLevel };
 use crate::renderer::Framebuffer;
-use imgui::ImGui;
+use imgui::{ImGui, Ui, ImStr};
 use crate::imgui_winit::ImGuiWinit;
 use glutin::ContextBuilder;
 use glium::Surface;
@@ -295,11 +295,13 @@ impl Debugger {
         let mut imgui = ImGui::init();
         let mut imgui_winit = ImGuiWinit::new(&mut imgui);
         let mut events_loop = glutin::EventsLoop::new();
-        let window_builder = glutin::WindowBuilder::new();
-        let context_builder = ContextBuilder::new();
+        let window_builder = glutin::WindowBuilder::new()
+            .with_maximized(true)
+            .with_title("GBA Emulator");
+        let context_builder = ContextBuilder::new()
+            .with_vsync(true);
         let display = glium::Display::new(window_builder, context_builder, &events_loop).unwrap();
         let mut imgui_renderer = imgui_glium_renderer::Renderer::init(&mut imgui, &display).unwrap();
-
 
         let mut running = true;
         while running {
@@ -369,9 +371,17 @@ impl Debugger {
             }
 
             let ui = imgui_winit.frame(&mut imgui, display.gl_window().window());
-            ui.window(im_str!("CPU")).build(|| {
-                ui.text(im_str!("{:?}", self.gba.arm));
-            });
+            ui.window(im_str!("CPU"))
+                .always_auto_resize(true)
+                .build(|| {
+                    ui.push_item_width(64.0);
+                    for i in 0..8 {
+                        input_hex(&ui, im_str!("{}", ARM_REGS[i + 0]), &mut self.gba.arm.regs[i + 0]);
+                        ui.same_line_spacing(0.0, 24.0);
+                        input_hex(&ui, im_str!("{}", ARM_REGS[i + 8]), &mut self.gba.arm.regs[i + 8]);
+                    }
+                    ui.pop_item_width();
+                });
             let mut frame = display.draw();
             frame.clear_color(0.9, 0.9, 0.9, 1.0);
             imgui_renderer.render(&mut frame, ui).unwrap();
@@ -482,5 +492,14 @@ impl Debugger {
         }
 
         State::Paused
+    }
+}
+
+fn input_hex(_: &Ui, label: &ImStr, value: &mut u32) {
+    let reg_ptr = value as *mut u32 as *mut _;
+    unsafe {
+        imgui::sys::igInputScalar(
+            label.as_ptr(), imgui::sys::ImGuiDataType::U32, reg_ptr,
+            ptr::null(), ptr::null(), im_str!("%08X").as_ptr(), imgui::ImGuiInputTextFlags::empty());
     }
 }

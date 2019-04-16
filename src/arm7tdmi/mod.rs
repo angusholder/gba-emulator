@@ -213,13 +213,13 @@ pub struct Arm7TDMI {
     thumb_enc_table: &'static ThumbEncTable,
 }
 
+pub static ARM_REGS: [&'static str; 16] = [
+    "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
+    "R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"
+];
+
 impl fmt::Debug for Arm7TDMI {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        static ARM_REGS: [&'static str; 16] = [
-            "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
-            "R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"
-        ];
-
         for (i, r) in self.regs.iter().enumerate() {
             write!(f, "{}:{:08X} ", ARM_REGS[i], r)?;
         }
