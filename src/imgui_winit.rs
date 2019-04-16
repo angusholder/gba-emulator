@@ -6,6 +6,7 @@ use glutin::{Event, Window};
 pub struct ImGuiWinit {
     pressed: [bool; 5],
     last_frame: Instant,
+    hidpi_factor: f64,
 }
 
 impl ImGuiWinit {
@@ -34,6 +35,9 @@ impl ImGuiWinit {
         ImGuiWinit {
             pressed: [false; 5],
             last_frame: Instant::now(),
+            hidpi_factor: 1.0,
+            // `hidpi_factor` gets read from the window every frame, this default will
+            // be immediately overwritten.
         }
     }
 
@@ -49,6 +53,7 @@ impl ImGuiWinit {
             .get_inner_size()
             .unwrap()
             .to_physical(window.get_hidpi_factor());
+        self.hidpi_factor = window.get_hidpi_factor();
         let hidpi_factor = window.get_hidpi_factor().round();
         let logical_size = physical_size.to_logical(hidpi_factor);
         let frame_size = FrameSize {
@@ -87,7 +92,7 @@ impl ImGuiWinit {
                 }
                 CursorMoved { position: pos, .. } => {
                     let (x, y): (f64, f64) = (*pos).into();
-                    imgui.set_mouse_pos(x as f32 / scale.0, y as f32 / scale.1);
+                    imgui.set_mouse_pos((x * self.hidpi_factor) as f32, (y * self.hidpi_factor) as f32);
                 }
                 MouseInput { state, button, .. } => {
                     match button {
