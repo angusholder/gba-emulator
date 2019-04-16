@@ -210,6 +210,7 @@ dependencies = [
  "glutin 0.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "imgui 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "imgui-glium-renderer 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "imgui-winit-support 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -305,6 +306,15 @@ dependencies = [
  "cc 1.0.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "glium 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.51 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "imgui-winit-support"
+version = "0.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "imgui 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winit 0.18.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -926,6 +936,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum imgui 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)" = "0cf1fcb9c1ffe0863030288d492c526e8d9fe65a2f253a10ba09baf35b086c1c"
 "checksum imgui-glium-renderer 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)" = "4928ecc2ec5ebdca9b7d8ff66a6e7a5bc52a2917d651258b948bf1cbb4338186"
 "checksum imgui-sys 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)" = "43dffca7910d6729da3cfb1aaf9022532316b66395fc495221d0d27003be8771"
+"checksum imgui-winit-support 0.0.23 (registry+https://github.com/rust-lang/crates.io-index)" = "12392d43d3eeea1eba6b627f6c1c74c108b55e9ed49719bd35c90c3ab20e8112"
 "checksum khronos_api 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 "checksum lazy_static 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "bc5729f27f159ddd61f4df6228e827e86643d4d3e7c32183cb30a1c08f604a14"
 "checksum libc 0.2.51 (registry+https://github.com/rust-lang/crates.io-index)" = "bedcc7a809076656486ffe045abeeac163da1b558e963a31e29fbfbeba916917"

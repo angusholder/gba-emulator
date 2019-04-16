@@ -23,7 +23,6 @@ mod gamepak;
 mod dma;
 mod iomap;
 mod bus;
-mod imgui_winit;
 
 use crate::gba::Gba;
 use crate::debugger::Debugger;
