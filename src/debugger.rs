@@ -13,6 +13,10 @@ use crate::gba::Gba;
 use crate::disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
 use crate::log::{ self, LogKind, LogLevel };
 use crate::renderer::Framebuffer;
+use imgui::ImGui;
+use crate::imgui_winit::ImGuiWinit;
+use glutin::ContextBuilder;
+use glium::Surface;
 
 fn int<'a, Iter, N: PrimInt>(iter: &mut Iter) -> CommandResult<N>
         where Iter: Iterator<Item=&'a str> {
@@ -285,24 +289,48 @@ impl Debugger {
 
         let mut state = State::Paused;
         let mut last_cmd: Option<Command> = None;
+        print!(">> ");
+        io::stdout().flush().unwrap();
 
-        loop {
+        let mut imgui = ImGui::init();
+        let mut imgui_winit = ImGuiWinit::new(&mut imgui);
+        let mut events_loop = glutin::EventsLoop::new();
+        let window_builder = glutin::WindowBuilder::new();
+        let context_builder = ContextBuilder::new();
+        let display = glium::Display::new(window_builder, context_builder, &events_loop).unwrap();
+        let mut imgui_renderer = imgui_glium_renderer::Renderer::init(&mut imgui, &display).unwrap();
+
+
+        let mut running = true;
+        while running {
+            events_loop.poll_events(|event| {
+                imgui_winit.handle_event(&mut imgui, &event);
+
+                match event {
+                    glutin::Event::WindowEvent {
+                        event: glutin::WindowEvent::CloseRequested,
+                        ..
+                    } => {
+                        running = false;
+                    },
+                    _ => {},
+                }
+            });
+
             match state {
                 State::Paused => {
-                    print!(">> ");
-                    io::stdout().flush().unwrap();
-
-                    match rx.recv().unwrap() {
-                        Err(CommandError::NoInput) => {
-                            if let Some(cmd) = last_cmd.take() {
-                                self.execute_command(cmd.clone());
-                                last_cmd = Some(cmd);
+                    match rx.try_recv() {
+                        Err(mpsc::TryRecvError::Empty) => {}
+                        Err(mpsc::TryRecvError::Disconnected) => unimplemented!(),
+                        Ok(Err(CommandError::NoInput)) => {
+                            if let Some(cmd) = last_cmd.clone() {
+                                self.execute_command(cmd);
                             }
                         }
-                        Err(error) => {
+                        Ok(Err(error)) => {
                             println!("Error: {}", error);
                         }
-                        Ok(cmd) => {
+                        Ok(Ok(cmd)) => {
                             state = self.execute_command(cmd.clone());
                             last_cmd = Some(cmd);
                         }
@@ -315,13 +343,15 @@ impl Debugger {
                         if event_occurred {
                             self.disassemble();
                             state = State::Paused;
+                            print!(">> ");
+                            io::stdout().flush().unwrap();
                             break;
                         }
                     }
                 }
 
                 State::Stepping(n) => {
-                    for i in 1..n+1 {
+                    for i in 1..n + 1 {
                         println!("Stepping... {}", i);
                         self.disassemble();
                         let event_occurred = self.step(true);
@@ -331,10 +361,21 @@ impl Debugger {
                     }
 
                     state = State::Paused;
+                    print!(">> ");
+                    io::stdout().flush().unwrap();
                 }
 
                 State::Terminate => break,
             }
+
+            let ui = imgui_winit.frame(&mut imgui, display.gl_window().window());
+            ui.window(im_str!("CPU")).build(|| {
+                ui.text(im_str!("{:?}", self.gba.arm));
+            });
+            let mut frame = display.draw();
+            frame.clear_color(0.9, 0.9, 0.9, 1.0);
+            imgui_renderer.render(&mut frame, ui).unwrap();
+            frame.finish().unwrap();
         }
     }
 

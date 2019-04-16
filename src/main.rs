@@ -6,6 +6,8 @@ extern crate enum_primitive_derive;
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate imgui;
 
 #[macro_use]
 mod log;
@@ -21,6 +23,7 @@ mod gamepak;
 mod dma;
 mod iomap;
 mod bus;
+mod imgui_winit;
 
 use crate::gba::Gba;
 use crate::debugger::Debugger;
