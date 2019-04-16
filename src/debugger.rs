@@ -1,7 +1,7 @@
 use std::{thread, ptr};
 use std::io;
 use std::fmt;
-use std::io::{Write, Read};
+use std::io::Write;
 use std::sync::mpsc;
 use std::collections::{ HashMap, HashSet };
 

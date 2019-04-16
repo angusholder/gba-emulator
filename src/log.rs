@@ -55,6 +55,7 @@ pub enum LogKind {
     TM2,
     TM3,
     BIOS,
+    GDB,
 }
 
 impl fmt::Display for LogKind {
@@ -73,6 +74,7 @@ impl fmt::Display for LogKind {
             LogKind::TM2 => "TM2",
             LogKind::TM3 => "TM3",
             LogKind::BIOS => "BIOS",
+            LogKind::GDB => "GDB",
         })
     }
 }
@@ -145,7 +147,7 @@ macro_rules! error {
     }}
 }
 
-static mut MINIMUM_LOG_LEVELS: [LogLevel; 13] = [LogLevel::Warn; 13];
+static mut MINIMUM_LOG_LEVELS: [LogLevel; 14] = [LogLevel::Trace; 14];
 
 pub fn get_log_level(kind: LogKind) -> LogLevel {
     unsafe {

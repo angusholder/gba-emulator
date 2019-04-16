@@ -23,21 +23,28 @@ mod gamepak;
 mod dma;
 mod iomap;
 mod bus;
+mod gdb_stub;
 
-use crate::gba::Gba;
-use crate::debugger::Debugger;
-use crate::renderer::{PHYS_WIDTH, PHYS_HEIGHT, Framebuffer};
-use std::error::Error;
+//use crate::gba::Gba;
+//use crate::debugger::Debugger;
+//use crate::renderer::{PHYS_WIDTH, PHYS_HEIGHT, Framebuffer};
+use crate::gdb_stub::GdbStub;
 use std::fs;
+use crate::gba::Gba;
 
-fn main() -> Result<(), Box<Error>> {
+fn main() -> Result<(), failure::Error> {
     let bios = fs::read("roms/bios.bin")?;
     let rom = fs::read("roms/Pac-Man Collection.gba")?;
     let mut gba = Gba::new(&bios, &rom);
     gba.arm.signal_reset();
 
-    let mut debugger = Debugger::new(gba);
-
-    debugger.run();
-    Ok(())
+    let mut stub = GdbStub::new(true, gba);
+    stub.listen("127.0.0.1:9876")?;
+    loop {
+        stub.update()?;
+    }
+//
+//    let mut debugger = Debugger::new(gba);
+//
+//    debugger.run();
 }
