@@ -89,6 +89,7 @@ impl GdbStub {
             };
             note!(GDB, "TcpListener accepted a connection from {}", addr);
             stream.set_nonblocking(!self.blocking)?;
+            self.no_ack_mode = false;
             self.stream = Some(stream);
         }
 
