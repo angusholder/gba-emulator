@@ -9,19 +9,19 @@ use crate::iomap;
 use std::fmt::UpperHex;
 use crate::bus::Bus;
 
-const ROM_SIZE: u32 = 0x4000;
+pub const ROM_SIZE: u32 = 0x4000;
 const ROM_MASK: u32 = ROM_SIZE - 1;
 const ROM_TIMING_U8: Cycle = Cycle(1);
 const ROM_TIMING_U16: Cycle = Cycle(1);
 const ROM_TIMING_U32: Cycle = Cycle(1);
 
-const EWRAM_SIZE: u32 = 256 * 1024;
+pub const EWRAM_SIZE: u32 = 256 * 1024;
 const EWRAM_MASK: u32 = EWRAM_SIZE - 1;
 const EWRAM_TIMING_U8: Cycle = Cycle(3);
 const EWRAM_TIMING_U16: Cycle = Cycle(3);
 const EWRAM_TIMING_U32: Cycle = Cycle(6);
 
-const IWRAM_SIZE: u32 = 32 * 1024;
+pub const IWRAM_SIZE: u32 = 32 * 1024;
 const IWRAM_MASK: u32 = IWRAM_SIZE - 1;
 const IWRAM_TIMING_U8: Cycle = Cycle(1);
 const IWRAM_TIMING_U16: Cycle = Cycle(1);
@@ -31,14 +31,19 @@ const IO_TIMING_U8: Cycle = Cycle(1);
 const IO_TIMING_U16: Cycle = Cycle(1);
 const IO_TIMING_U32: Cycle = Cycle(1);
 
-const BASE_ROM: u32 = 0x0;
-const BASE_EWRAM: u32 = 0x2;
-const BASE_IWRAM: u32 = 0x3;
-const BASE_IOREGS: u32 = 0x4;
-const BASE_PALETTE: u32 = 0x5;
-const BASE_VRAM: u32 = 0x6;
-const BASE_OAM: u32 = 0x7;
-const BASE_GAMEPAK_START: u32 = 0x8;
+pub const PALETTE_SIZE: u32 = 0x400;
+pub const VRAM_SIZE: u32 = 0x18000;
+pub const OAM_SIZE: u32 = 0x400;
+pub const IOREGS_SIZE: u32 = 0x3FF;
+
+pub const BASE_ROM: u32 = 0x0;
+pub const BASE_EWRAM: u32 = 0x2;
+pub const BASE_IWRAM: u32 = 0x3;
+pub const BASE_IOREGS: u32 = 0x4;
+pub const BASE_PALETTE: u32 = 0x5;
+pub const BASE_VRAM: u32 = 0x6;
+pub const BASE_OAM: u32 = 0x7;
+pub const BASE_GAMEPAK_START: u32 = 0x8;
 const BASE_GAMEPAK_END: u32 = 0xD;
 
 fn unhandled_read(addr: u32) {

@@ -83,4 +83,8 @@ impl GamePak {
         self.next_seq_addr.set((addr + 4) & !1);
         (cycles1 + cycles2, (read1 as u32) | ((read2 as u32) << 16))
     }
+
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
 }
