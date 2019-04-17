@@ -156,6 +156,9 @@ impl GdbStub {
             b'c' => {
                 self.do_continue(message_body)?;
             }
+            b'D' => {
+                self.process_detach_command()?;
+            }
             b'g' => {
                 self.read_gprs()?;
             }
@@ -204,10 +207,6 @@ impl GdbStub {
 
     fn process_qread_command(&mut self, msg: &[u8]) -> GResult {
         match msg {
-            b"TStatus" => {
-                // No trace is running, we don't support tracepoints
-                self.send(b"T0")
-            }
             b"fThreadInfo" => {
                 // First thread in list: thread ID 1
                 self.send(b"m1")
@@ -389,6 +388,13 @@ impl GdbStub {
 
         self.gba.step(&mut self.framebuffer);
         self.send_fmt(format_args!("S{:02}", SIGTRAP))
+    }
+
+    fn process_detach_command(&mut self) -> GResult {
+        self.send(b"OK")?;
+        // Just close the stream, we have no other bookkeeping to do for detaching.
+        self.stream = None;
+        Ok(())
     }
 
     fn send_fmt(&mut self, args: Arguments) -> GResult {
