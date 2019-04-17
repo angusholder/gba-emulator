@@ -50,7 +50,7 @@ struct RunState {
 
 use self::DmaUnit::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Dma {
     bus: BusPtr,
 

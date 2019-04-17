@@ -6,8 +6,15 @@ use std::fmt::Arguments;
 use crate::gba::Gba;
 use crate::bus::{BusPtr, Bus};
 use crate::utils::OrderedSet;
+use crate::renderer::Framebuffer;
+use std::time::{Instant, Duration};
+use std::thread;
 
 type GResult = Result<(), failure::Error>;
+
+// From include/gdb/signals.h in GDB source code
+const SIGINT: u32 = 2;
+const SIGTRAP: u32 = 5;
 
 pub struct GdbStub {
     listener: Option<TcpListener>,
@@ -16,6 +23,14 @@ pub struct GdbStub {
     no_ack_mode: bool,
     gba: Box<Gba>,
     bus_snooper: Box<BusDebugSnooper>,
+    framebuffer: Framebuffer,
+    run_state: RunState,
+}
+
+#[derive(PartialEq)]
+enum RunState {
+    Running,
+    Paused,
 }
 
 impl GdbStub {
@@ -29,6 +44,8 @@ impl GdbStub {
             no_ack_mode: false,
             gba,
             bus_snooper,
+            framebuffer: Framebuffer::new(),
+            run_state: RunState::Paused,
         }
     }
 
@@ -37,6 +54,25 @@ impl GdbStub {
         listener.set_nonblocking(!self.blocking)?;
         self.listener = Some(listener);
         Ok(())
+    }
+
+    pub fn run(&mut self) -> GResult {
+        loop {
+            self.update()?;
+            if self.run_state == RunState::Running {
+                let deadline = Instant::now() + Duration::from_millis(15);
+                while Instant::now() < deadline {
+                    self.gba.step(&mut self.framebuffer);
+                    if let Some(stop_reason) = self.bus_snooper.stop_reason.take() {
+                        self.run_state = RunState::Paused;
+                        self.send(&stop_reason.to_command())?;
+                        break;
+                    }
+                }
+            } else {
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
     }
 
     pub fn update(&mut self) -> GResult {
@@ -83,6 +119,7 @@ impl GdbStub {
             }
             0x03 => {
                 // Enter debugger
+                self.run_state = RunState::Paused;
                 return Ok(());
             }
             first => {
@@ -113,7 +150,10 @@ impl GdbStub {
         match message_type {
             b'?' => {
                 // Let's say we halted due to SIGINT
-                self.send(b"S02")?;
+                self.send_fmt(format_args!("S{:02}", SIGINT))?;
+            }
+            b'c' => {
+                self.do_continue(message_body)?;
             }
             b'g' => {
                 self.read_gprs()?;
@@ -143,6 +183,9 @@ impl GdbStub {
             }
             b'Q' => {
                 self.process_qwrite_command(message_body)?;
+            }
+            b's' => {
+                self.do_step(message_body)?;
             }
             b'z' => {
                 self.process_z_command(message_body, false)?;
@@ -328,6 +371,25 @@ impl GdbStub {
         self.send(b"OK")
     }
 
+    fn do_continue(&mut self, msg: &[u8]) -> GResult {
+        if !msg.is_empty() {
+            let addr = hex_to_int_le(msg)?;
+            self.gba.arm.branch_to(addr);
+        }
+
+        Ok(())
+    }
+
+    fn do_step(&mut self, msg: &[u8]) -> GResult {
+        if !msg.is_empty() {
+            let addr = hex_to_int_le(msg)?;
+            self.gba.arm.branch_to(addr);
+        }
+
+        self.gba.step(&mut self.framebuffer);
+        self.send_fmt(format_args!("S{:02}", SIGTRAP))
+    }
+
     fn send_fmt(&mut self, args: Arguments) -> GResult {
         let mut bytes = Vec::<u8>::new();
         bytes.write_fmt(args)?;
@@ -388,6 +450,19 @@ enum StopReason {
     WriteWatchpoint(u32),
     AccessWatchpoint(u32),
     Breakpoint(u32),
+}
+
+impl StopReason {
+    fn to_command(&self) -> Vec<u8> {
+        let mut result = Vec::new();
+        match self {
+            StopReason::ReadWatchpoint(addr) => write!(result, "T{:02}rwatch:{}", SIGTRAP, std::str::from_utf8(&int_to_hex_le(*addr)).unwrap()),
+            StopReason::WriteWatchpoint(addr) => write!(result, "T{:02}watch:{}", SIGTRAP, std::str::from_utf8(&int_to_hex_le(*addr)).unwrap()),
+            StopReason::AccessWatchpoint(addr) => write!(result, "T{:02}awatch:{}", SIGTRAP, std::str::from_utf8(&int_to_hex_le(*addr)).unwrap()),
+            StopReason::Breakpoint(_) => write!(result, "T{:02}hwbreak:", SIGTRAP),
+        }.unwrap();
+        result
+    }
 }
 
 pub struct BusDebugSnooper {
