@@ -144,6 +144,12 @@ impl GdbStub {
             b'M' => {
                 self.write_memory(message_body)?;
             }
+            b'z' => {
+                self.process_z_command(message_body, false)?;
+            }
+            b'Z' => {
+                self.process_z_command(message_body, true)?;
+            }
             _ => {
                 self.unrecognised_command()?;
             }
@@ -275,6 +281,48 @@ impl GdbStub {
 
         for (addr, byte) in (start_addr..start_addr+len).zip(data) {
             self.gba.debug_write8(addr, byte);
+        }
+
+        self.send(b"OK")
+    }
+
+    fn process_z_command(&mut self, msg: &[u8], is_insert: bool) -> GResult {
+        let (type_str, addr_str) = split_at(msg, b',')?;
+        let (addr_str, kind_str) = split_at(addr_str, b',')?;
+        let kind: u32 = hex_to_int(kind_str)?;
+        let start_addr = hex_to_int(addr_str)?;
+
+        let addr_set: &mut OrderedSet<u32> = match type_str {
+            b"0" | b"1" if kind != 2 && kind != 4 => {
+                return self.unrecognised_command();
+            }
+            b"0" => { // software breakpoint
+                // TODO: Implement this?
+                return self.unrecognised_command();
+            }
+            b"1" => { // hardware breakpoint
+                &mut self.bus_snooper.breakpoints
+            }
+            b"2" => { // write watchpoint
+                &mut self.bus_snooper.write_watchpoints
+            }
+            b"3" => { // read watchpoint
+                &mut self.bus_snooper.read_watchpoints
+            }
+            b"4" => { // access watchpoint
+                &mut self.bus_snooper.access_watchpoints
+            }
+            _ => {
+                return self.unrecognised_command();
+            }
+        };
+
+        for addr in start_addr..start_addr+kind {
+            if is_insert {
+                addr_set.insert(addr);
+            } else {
+                addr_set.remove(addr);
+            }
         }
 
         self.send(b"OK")
