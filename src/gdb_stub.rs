@@ -575,7 +575,7 @@ fn hex_to_int_le(bstr: &[u8]) -> Result<u32, failure::Error> {
 }
 
 fn int_to_hex_le(reg: u32) -> [u8; 8] {
-    const CHARS: &[u8] = b"012346789ABCDEF";
+    const CHARS: &[u8] = b"0123456789ABCDEF";
     let mut result = [0u8; 8];
     for (i, &b) in reg.to_le_bytes().iter().enumerate() {
         result[2*i + 0] = CHARS[(b >> 4) as usize];
