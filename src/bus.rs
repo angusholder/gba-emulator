@@ -44,10 +44,6 @@ impl BusPtr {
     pub fn new(bus: *mut dyn Bus) -> Self {
         Self(bus)
     }
-
-    pub fn set_ptr(&mut self, bus: *mut dyn Bus) {
-        self.0 = bus;
-    }
 }
 
 impl Default for BusPtr {

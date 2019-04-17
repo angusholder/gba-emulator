@@ -21,7 +21,7 @@ pub struct GdbStub {
 impl GdbStub {
     pub fn new(blocking: bool, mut gba: Box<Gba>) -> GdbStub {
         let mut bus_snooper = BusDebugSnooper::wrap(gba.arm.bus.clone());
-        gba.arm.bus = BusPtr::new(bus_snooper.as_mut() as *mut dyn Bus);
+        gba.fixup_bus_ptrs(BusPtr::new(bus_snooper.as_mut() as *mut dyn Bus));
         GdbStub {
             listener: None,
             stream: None,

@@ -1,13 +1,13 @@
 use crate::utils::{ Buffer, Cycle };
 use crate::renderer::{Renderer, Framebuffer};
-use crate::dma::{ Dma, DmaUnit, step_dma_units, dma_on_vblank, dma_on_hblank };
+use crate::dma::{ Dma, DmaUnit, step_dma_units };
 use crate::timer::{ Timer, TimerUnit, step_timers };
 use crate::gamepak::GamePak;
 use crate::log::*;
 use crate::arm7tdmi::Arm7TDMI;
 use crate::iomap;
 use std::fmt::UpperHex;
-use crate::bus::Bus;
+use crate::bus::{Bus, BusPtr};
 
 pub const ROM_SIZE: u32 = 0x4000;
 const ROM_MASK: u32 = ROM_SIZE - 1;
@@ -102,10 +102,10 @@ impl Gba {
                 Timer::new(TimerUnit::Tm3)
             ],
             dma: [
-                Dma::new(DmaUnit::Dma0),
-                Dma::new(DmaUnit::Dma1),
-                Dma::new(DmaUnit::Dma2),
-                Dma::new(DmaUnit::Dma3)
+                Dma::new(BusPtr::null(), DmaUnit::Dma0),
+                Dma::new(BusPtr::null(), DmaUnit::Dma1),
+                Dma::new(BusPtr::null(), DmaUnit::Dma2),
+                Dma::new(BusPtr::null(), DmaUnit::Dma3)
             ],
             renderer: Renderer::new(),
 
@@ -128,8 +128,15 @@ impl Gba {
             }
         });
         let bus_ptr = result.as_mut() as *mut dyn Bus;
-        result.arm.bus.set_ptr(bus_ptr);
+        result.fixup_bus_ptrs(BusPtr::new(bus_ptr));
         result
+    }
+
+    pub fn fixup_bus_ptrs(&mut self, bus: BusPtr) {
+        self.arm.bus = bus.clone();
+        for dma in self.dma.iter_mut() {
+            dma.set_bus(bus.clone());
+        }
     }
 
     pub fn step(&mut self, buffer: &mut Framebuffer) {
@@ -138,7 +145,7 @@ impl Gba {
         let start_cycle = self.cycles;
 
         // If a DMA engine did any work, the CPU does no work for this iteration
-        if let Some(flag) = step_dma_units(self) {
+        if let Some(flag) = step_dma_units(&mut self.dma) {
             flags |= flag;
         } else {
             self.arm.step();
@@ -149,17 +156,29 @@ impl Gba {
         flags |= step_timers(self, current_cycle);
 
         if flags.contains(IrqFlags::LCD_VBLANK) {
-            dma_on_vblank(self);
+            self.on_vblank();
         }
 
         if flags.contains(IrqFlags::LCD_HBLANK) {
-            dma_on_hblank(self);
+            self.on_hblank();
         }
 
         let masked = flags & self.interrupt_enable;
         if self.master_interrupt_enable && !masked.is_empty() {
             self.interrupt_flags.insert(masked);
             self.arm.signal_irq();
+        }
+    }
+
+    fn on_vblank(&mut self) {
+        for dma in self.dma.iter_mut() {
+            dma.on_vblank();
+        }
+    }
+
+    fn on_hblank(&mut self) {
+        for dma in self.dma.iter_mut() {
+            dma.on_hblank();
         }
     }
 
