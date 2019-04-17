@@ -53,7 +53,7 @@ impl GdbStub {
         // Unwrapping because we ensured it's Some above
         let stream = self.stream.as_mut().unwrap();
 
-        let mut bytes = vec![0u8; 1200];
+        let mut bytes = [0u8; 1200];
         let msg: &[u8];
         if let Some(amount) = transpose_would_block(stream.read(&mut bytes[..]))? {
             if amount == 0 {
