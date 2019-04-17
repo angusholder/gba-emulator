@@ -4,6 +4,8 @@ use num_traits::PrimInt;
 use crate::log::LogKind::GDB;
 use std::fmt::Arguments;
 use crate::gba::Gba;
+use crate::bus::{BusPtr, Bus};
+use crate::utils::OrderedSet;
 
 type GResult = Result<(), failure::Error>;
 
@@ -13,16 +15,20 @@ pub struct GdbStub {
     blocking: bool,
     no_ack_mode: bool,
     gba: Box<Gba>,
+    bus_snooper: Box<BusDebugSnooper>,
 }
 
 impl GdbStub {
-    pub fn new(blocking: bool, gba: Box<Gba>) -> GdbStub {
+    pub fn new(blocking: bool, mut gba: Box<Gba>) -> GdbStub {
+        let mut bus_snooper = BusDebugSnooper::wrap(gba.arm.bus.clone());
+        gba.arm.bus = BusPtr::new(bus_snooper.as_mut() as *mut dyn Bus);
         GdbStub {
             listener: None,
             stream: None,
             blocking,
             no_ack_mode: false,
             gba,
+            bus_snooper,
         }
     }
 
@@ -326,6 +332,101 @@ impl GdbStub {
             trace!(GDB, "tried to send {} bytes but stream was None", bytes.len());
         }
         Ok(())
+    }
+}
+
+enum StopReason {
+    ReadWatchpoint(u32),
+    WriteWatchpoint(u32),
+    AccessWatchpoint(u32),
+    Breakpoint(u32),
+}
+
+pub struct BusDebugSnooper {
+    delegate: BusPtr,
+    breakpoints: OrderedSet<u32>,
+    read_watchpoints: OrderedSet<u32>,
+    write_watchpoints: OrderedSet<u32>,
+    access_watchpoints: OrderedSet<u32>,
+    stop_reason: Option<StopReason>,
+}
+
+impl BusDebugSnooper {
+    pub fn wrap(delegate: BusPtr) -> Box<BusDebugSnooper> {
+        Box::new(BusDebugSnooper {
+            delegate,
+            breakpoints: OrderedSet::new(),
+            read_watchpoints: OrderedSet::new(),
+            write_watchpoints: OrderedSet::new(),
+            access_watchpoints: OrderedSet::new(),
+            stop_reason: None,
+        })
+    }
+
+    fn check_read(&mut self, addr: u32) {
+        if self.read_watchpoints.contains(addr) {
+            self.stop_reason = Some(StopReason::ReadWatchpoint(addr));
+        } else if self.access_watchpoints.contains(addr) {
+            self.stop_reason = Some(StopReason::AccessWatchpoint(addr));
+        }
+    }
+
+    fn check_write(&mut self, addr: u32) {
+        if self.write_watchpoints.contains(addr) {
+            self.stop_reason = Some(StopReason::WriteWatchpoint(addr));
+        }
+    }
+
+    fn check_exec(&mut self, addr: u32) {
+        if self.breakpoints.contains(addr) {
+            self.stop_reason = Some(StopReason::Breakpoint(addr));
+        }
+    }
+}
+
+impl Bus for BusDebugSnooper {
+    fn read8(&mut self, addr: u32) -> u8 {
+        self.check_read(addr);
+        self.delegate.read8(addr)
+    }
+
+    fn read16(&mut self, addr: u32) -> u16 {
+        self.check_read(addr);
+        self.delegate.read16(addr)
+    }
+
+    fn read32(&mut self, addr: u32) -> u32 {
+        self.check_read(addr);
+        self.delegate.read32(addr)
+    }
+
+    fn write8(&mut self, addr: u32, value: u8) {
+        self.check_write(addr);
+        self.delegate.write8(addr, value);
+    }
+
+    fn write16(&mut self, addr: u32, value: u16) {
+        self.check_write(addr);
+        self.delegate.write16(addr, value);
+    }
+
+    fn write32(&mut self, addr: u32, value: u32) {
+        self.check_write(addr);
+        self.delegate.write32(addr, value);
+    }
+
+    fn exec_thumb_slow(&mut self, addr: u32) -> u16 {
+        self.check_exec(addr);
+        self.delegate.exec_thumb_slow(addr)
+    }
+
+    fn exec_arm_slow(&mut self, addr: u32) -> u32 {
+        self.check_exec(addr);
+        self.delegate.exec_arm_slow(addr)
+    }
+
+    fn add_internal_cycles(&mut self, cycles: i64) {
+        self.delegate.add_internal_cycles(cycles);
     }
 }
 
