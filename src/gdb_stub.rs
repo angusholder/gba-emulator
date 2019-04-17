@@ -239,18 +239,19 @@ impl GdbStub {
     }
 
     fn process_qsupported_command(&mut self, msg: &[u8]) -> GResult {
-        for capability in msg.split(|&b| b == b';') {
-            match capability {
-                b"swbreak+" => {
-                }
-                b"hwbreak+" => {
+        let mut have_capabilities = Vec::new();
+        for requested_capability in msg.split(|&b| b == b';') {
+            match requested_capability {
+                b"swbreak+" | b"hwbreak+" | b"arm+" => {
+                    have_capabilities.push(requested_capability);
                 }
                 // TODO: Support "vContSupported+"?
                 _ => {}
             }
         }
 
-        self.send(b"swbreak+;hwbreak+;arm+")
+        let capability_string = have_capabilities.join(&b';');
+        self.send(&capability_string)
     }
 
     fn process_qwrite_command(&mut self, msg: &[u8]) -> GResult {
