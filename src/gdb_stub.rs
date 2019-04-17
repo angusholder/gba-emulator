@@ -147,29 +147,39 @@ impl GdbStub {
     }
 
     fn process_qread_command(&mut self, msg: &[u8]) -> GResult {
-        if let Some(tail) = strip_prefix(msg, b"Supported:") {
-            self.process_qsupported_command(tail)
-        } else if msg == b"TStatus" {
-            // No trace is running, we don't support tracepoints
-            self.send(b"T0")
-        } else if msg == b"fThreadInfo" {
-            // First thread in list: thread ID 1
-            self.send(b"m1")
-        } else if msg == b"sThreadInfo" {
-            // End of list, thread ID 1 is the only thread
-            self.send(b"l")
-        } else if msg == b"C" {
-            // The current thread is thread 1, we only have 1 thread..
-            self.send(b"QC1")
-        } else if msg == b"Attached" {
-            // We, the GDB server, are always already attached to a process
-            self.send(b"1")
-        } else if msg == b"HostInfo" {
-            const MACH_O_ARM: u32 = 12;
-            const MACH_O_ARM_V4T: u32 = 5;
-            self.send_fmt(format_args!("cputype:{};cpusubtype:{};ostype:none;vendor:none;endian:little;ptrsize:4;", MACH_O_ARM, MACH_O_ARM_V4T))
-        } else {
-            self.unrecognised_command()
+        match msg {
+            b"TStatus" => {
+                // No trace is running, we don't support tracepoints
+                self.send(b"T0")
+            }
+            b"fThreadInfo" => {
+                // First thread in list: thread ID 1
+                self.send(b"m1")
+            }
+            b"sThreadInfo" => {
+                // End of list, thread ID 1 is the only thread
+                self.send(b"l")
+            }
+            b"C" => {
+                // The current thread is thread 1, we only have 1 thread..
+                self.send(b"QC1")
+            }
+            b"Attached" => {
+                // We, the GDB server, are always already attached to a process
+                self.send(b"1")
+            }
+            b"HostInfo" => {
+                const MACH_O_ARM: u32 = 12;
+                const MACH_O_ARM_V4T: u32 = 5;
+                self.send_fmt(format_args!("cputype:{};cpusubtype:{};ostype:none;vendor:none;endian:little;ptrsize:4;", MACH_O_ARM, MACH_O_ARM_V4T))
+            }
+            _ => {
+                if let Some(tail) = strip_prefix(msg, b"Supported:") {
+                    self.process_qsupported_command(tail)
+                } else {
+                    self.unrecognised_command()
+                }
+            }
         }
     }
 
