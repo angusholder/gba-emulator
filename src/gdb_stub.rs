@@ -341,8 +341,8 @@ impl GdbStub {
                 return self.unrecognised_command();
             }
             b"0" => { // software breakpoint
-                // TODO: Implement this?
-                return self.unrecognised_command();
+                // TODO: Does it matter that I'm just implementing this like a hardware breakpoint?
+                &mut self.bus_snooper.breakpoints
             }
             b"1" => { // hardware breakpoint
                 &mut self.bus_snooper.breakpoints
