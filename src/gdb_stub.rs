@@ -111,17 +111,6 @@ impl GdbStub {
         let message_type = msg[1];
         let message_body = &message_body[1..];
         match message_type {
-            b'q' => {
-                self.process_qread_command(message_body)?;
-            }
-            b'Q' => {
-                self.process_qwrite_command(message_body)?;
-            }
-            b'H' => {
-                // Sets the thread to use for subsequent invocations of a particular command.
-                // We only have 1 thread, so acknowledge and do nothing.
-                self.send(b"OK")?;
-            }
             b'?' => {
                 // Let's say we halted due to SIGINT
                 self.send(b"S02")?;
@@ -132,17 +121,28 @@ impl GdbStub {
             b'G' => {
                 self.write_gprs(message_body)?;
             }
-            b'p' => {
-                self.read_gpr(message_body)?;
-            }
-            b'P' => {
-                self.write_gpr(message_body)?;
+            b'H' => {
+                // Sets the thread to use for subsequent invocations of a particular command.
+                // We only have 1 thread, so acknowledge and do nothing.
+                self.send(b"OK")?;
             }
             b'm' => {
                 self.read_memory(message_body)?;
             }
             b'M' => {
                 self.write_memory(message_body)?;
+            }
+            b'p' => {
+                self.read_gpr(message_body)?;
+            }
+            b'P' => {
+                self.write_gpr(message_body)?;
+            }
+            b'q' => {
+                self.process_qread_command(message_body)?;
+            }
+            b'Q' => {
+                self.process_qwrite_command(message_body)?;
             }
             b'z' => {
                 self.process_z_command(message_body, false)?;
