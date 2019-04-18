@@ -85,6 +85,13 @@ impl Gui {
         frame.clear_color(0.9, 0.9, 0.9, 1.0);
 
         let ui = self.imgui.frame(frame_size, delta_s);
+        Self::render_cpu(gba, &ui);
+        self.renderer.render(&mut frame, ui).unwrap();
+
+        frame.finish().unwrap();
+    }
+
+    fn render_cpu(gba: &mut Gba, ui: &Ui) {
         ui.window(im_str!("CPU"))
             .always_auto_resize(true)
             .build(|| {
@@ -96,9 +103,6 @@ impl Gui {
                 }
                 ui.pop_item_width();
             });
-        self.renderer.render(&mut frame, ui).unwrap();
-
-        frame.finish().unwrap();
     }
 }
 
