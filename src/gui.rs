@@ -42,17 +42,14 @@ impl Gui {
         imgui.set_font_global_scale((1.0 / hidpi_factor) as f32);
         imgui_winit_support::configure_keys(&mut imgui);
 
-        let mut renderer = Renderer::init(&mut imgui, &display).unwrap();
-
-        let mut running = true;
-        let mut last_frame = Instant::now();
+        let renderer = Renderer::init(&mut imgui, &display).unwrap();
 
         Gui {
             display,
             imgui,
             renderer,
-            running,
-            last_frame,
+            running: true,
+            last_frame: Instant::now(),
             hidpi_factor,
         }
     }

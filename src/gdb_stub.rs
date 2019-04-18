@@ -8,7 +8,6 @@ use crate::bus::{BusPtr, Bus};
 use crate::utils::OrderedSet;
 use crate::renderer::Framebuffer;
 use std::time::{Instant, Duration};
-use std::thread;
 use crate::arm7tdmi::REG_PC;
 use glutin::EventsLoop;
 use crate::gui::Gui;

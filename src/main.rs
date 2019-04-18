@@ -16,7 +16,6 @@ mod utils;
 mod arm7tdmi;
 mod gba;
 mod disassemble;
-mod debugger;
 mod renderer;
 mod timer;
 mod gamepak;
