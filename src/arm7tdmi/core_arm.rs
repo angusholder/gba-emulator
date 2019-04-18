@@ -60,7 +60,6 @@ fn op_swp(arm: &mut Arm7TDMI, op: ArmOp) {
     let addr = arm.regs[rn_index];
     let rm = arm.regs[rm_index];
 
-    check_watchpoint!(arm, addr);
     let old = arm.bus.read32(addr);
     arm.regs[rd_index] = old;
     arm.bus.write32(addr, rm);
@@ -81,7 +80,6 @@ fn op_swpb(arm: &mut Arm7TDMI, op: ArmOp) {
     let addr = arm.regs[rn_index];
     let rm = arm.regs[rm_index];
 
-    check_watchpoint!(arm, addr);
     let old = arm.bus.read8(addr) as u32;
     arm.regs[rd_index] = old;
     arm.bus.write8(addr, rm as u8);
@@ -313,7 +311,6 @@ fn block_data_transfer(arm: &mut Arm7TDMI, op: ArmOp, f: impl Fn(&mut Arm7TDMI, 
 fn ldmia(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 { // Post-increment
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let value = arm.bus.read32(addr);
             arm.set_reg(i, value);
             addr += 4;
@@ -326,7 +323,6 @@ fn ldmib(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             addr += 4;
-            check_watchpoint!(arm, addr);
             let value = arm.bus.read32(addr);
             arm.set_reg(i, value);
         }
@@ -339,7 +335,6 @@ fn ldmda(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     addr = addr - reglist.count_ones() * 4 + 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let value = arm.bus.read32(addr);
             arm.set_reg(i, value);
             addr += 4;
@@ -353,7 +348,6 @@ fn ldmdb(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     addr = addr - reglist.count_ones() * 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let value = arm.bus.read32(addr);
             arm.set_reg(i, value);
             addr += 4;
@@ -374,7 +368,6 @@ fn get_reg(arm: &Arm7TDMI, index: usize) -> u32 {
 fn stmia(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let reg = get_reg(arm, i);
             arm.bus.write32(addr, reg);
             addr += 4;
@@ -387,7 +380,6 @@ fn stmib(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
             addr += 4;
-            check_watchpoint!(arm, addr);
             let reg = get_reg(arm, i);
             arm.bus.write32(addr, reg);
         }
@@ -400,7 +392,6 @@ fn stmda(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     addr = addr - reglist.count_ones() * 4 + 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let reg = get_reg(arm, i);
             arm.bus.write32(addr, reg);
             addr += 4;
@@ -414,7 +405,6 @@ fn stmdb(arm: &mut Arm7TDMI, reglist: u16, mut addr: u32) -> u32 {
     addr = addr - reglist.count_ones() * 4;
     for i in 0usize..16 {
         if reglist & (1 << i) != 0 {
-            check_watchpoint!(arm, addr);
             let reg = get_reg(arm, i);
             arm.bus.write32(addr, reg);
             addr += 4;
@@ -585,8 +575,6 @@ fn single_data_load(arm: &mut Arm7TDMI, op: ArmOp, load: impl Fn(&mut Bus, u32) 
 
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
 
-    check_watchpoint!(arm, addr);
-
     arm.bus.add_internal_cycles(1);
     let value = load(&mut *arm.bus, addr);
     arm.set_reg(rd_index, value);
@@ -627,8 +615,6 @@ fn single_data_store(arm: &mut Arm7TDMI, op: ArmOp, store: impl Fn(&mut Bus, u32
     }
 
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
-
-    check_watchpoint!(arm, addr);
 
     arm.bus.add_internal_cycles(1);
     store(&mut *arm.bus, addr, rd);
@@ -671,7 +657,6 @@ fn sh_data_load(arm: &mut Arm7TDMI, op: ArmOp, load: impl Fn(&mut Bus, u32) -> u
     }
 
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
-    check_watchpoint!(arm, addr);
 
     arm.bus.add_internal_cycles(1); // internal cycle for address calculation
 
@@ -705,7 +690,6 @@ fn strh(arm: &mut Arm7TDMI, op: ArmOp) {
     }
 
     let addr = if preindex { rn.wrapping_add(offset) } else { rn };
-    check_watchpoint!(arm, addr);
 
     arm.bus.write16(addr, rd as u16);
 

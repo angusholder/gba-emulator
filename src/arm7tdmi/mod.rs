@@ -8,7 +8,6 @@ use std::fmt;
 
 use num_traits::FromPrimitive;
 
-use crate::utils::OrderedSet;
 use crate::arm7tdmi::core_thumb::ThumbEncTable;
 use crate::arm7tdmi::core_arm::ArmEncTable;
 use crate::arm7tdmi::core_arm::ArmOp;
@@ -171,13 +170,6 @@ impl StatusRegister {
     }
 }
 
-#[derive(PartialEq)]
-pub enum StepEvent {
-    None,
-    TriggerBreakpoint(u32),
-    TriggerWatchpoint(u32),
-}
-
 pub const REG_SP: usize = 13;
 pub const REG_LR: usize = 14;
 pub const REG_PC: usize = 15;
@@ -204,10 +196,6 @@ pub struct Arm7TDMI {
     und_sp: u32,
     und_lr: u32,
     und_spsr: StatusRegister,
-
-    // For use by the debugger
-    pub breakpoints: OrderedSet<u32>,
-    pub watchpoints: OrderedSet<u32>,
 
     arm_enc_table: &'static ArmEncTable,
     thumb_enc_table: &'static ThumbEncTable,
@@ -247,9 +235,6 @@ impl Arm7TDMI {
             und_sp: 0,
             und_lr: 0,
             und_spsr: Default::default(),
-
-            breakpoints: OrderedSet::new(),
-            watchpoints: OrderedSet::new(),
 
             arm_enc_table: ArmEncTable::get_instance(),
             thumb_enc_table: ThumbEncTable::get_instance(),
@@ -415,10 +400,6 @@ impl Arm7TDMI {
     pub fn step(&mut self) {
         use self::core_thumb::step_thumb;
         use self::core_arm::step_arm;
-
-//        if self.breakpoints.contains(self.current_pc()) {
-//            return StepEvent::TriggerBreakpoint(self.current_pc());
-//        }
 
         self.regs[REG_PC] += self.get_op_size();
 

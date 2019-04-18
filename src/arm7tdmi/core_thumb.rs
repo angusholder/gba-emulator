@@ -222,7 +222,6 @@ fn str_reg_offset(arm: &mut Arm7TDMI, op: ThumbOp, store: impl Fn(&mut Bus, u32,
     let rb = arm.regs[op.reg3(3)];
     let ro = arm.regs[op.reg3(6)];
     let addr = rb.wrapping_add(ro);
-    check_watchpoint!(arm, addr);
     store(&mut *arm.bus, addr, rd);
 }
 
@@ -246,7 +245,6 @@ fn ldr_reg_offset(arm: &mut Arm7TDMI, op: ThumbOp, load: impl Fn(&mut Bus, u32) 
     let rb = arm.regs[op.reg3(3)];
     let ro = arm.regs[op.reg3(6)];
     let addr = rb.wrapping_add(ro);
-    check_watchpoint!(arm, addr);
     arm.regs[op.reg3(0)] = load(&mut *arm.bus, addr);
 }
 
@@ -265,7 +263,6 @@ fn str_imm_offset(arm: &mut Arm7TDMI, op: ThumbOp, word_size: u32, store: impl F
     let rb = arm.regs[op.reg3(3)];
     let offset = op.imm5(6) * word_size;
     let addr = rb.wrapping_add(offset);
-    check_watchpoint!(arm, addr);
     store(&mut *arm.bus, addr, rd);
 }
 
@@ -284,7 +281,6 @@ fn ldr_imm_offset(arm: &mut Arm7TDMI, op: ThumbOp, word_size: u32, load: impl Fn
     let rb = arm.regs[op.reg3(3)];
     let offset = op.imm5(6) * word_size;
     let addr = rb.wrapping_add(offset);
-    check_watchpoint!(arm, addr);
     arm.regs[op.reg3(0)] = load(&mut *arm.bus, addr);
     // TODO: The instruction cycle times for the THUMB instruction are identical to that of the equivalent ARM instruction. For more information on instruction cycle times, please refer to Chapter 10, Instruction Cycle Operations.
     arm.bus.add_internal_cycles(1); // internal cycle for address calculation
@@ -424,7 +420,6 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         |arm, op| {
             let offset = op.imm8() << 2;
             let addr = (arm.regs[REG_PC] & !2).wrapping_add(offset);
-            check_watchpoint!(arm, addr);
             arm.regs[op.reg3(8)] = arm.bus.read32(addr);
             arm.bus.add_internal_cycles(1); // internal cycle for address calculation
         }
@@ -453,7 +448,6 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
             let rd = arm.regs[op.reg3(8)];
             let offset = op.imm8() << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
-            check_watchpoint!(arm, addr);
             arm.bus.write32(addr, rd);
         }
     ),
@@ -461,7 +455,6 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         |arm, op| {
             let offset = op.imm8() << 2;
             let addr = arm.regs[REG_SP].wrapping_add(offset);
-            check_watchpoint!(arm, addr);
             arm.regs[op.reg3(8)] = arm.bus.read32(addr);
             arm.bus.add_internal_cycles(1); // internal cycle for address calculation
         }
@@ -499,14 +492,12 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
             for i in 0..8 {
                 if reglist & (1 << i) != 0 {
-                    check_watchpoint!(arm, sp);
                     arm.bus.write32(sp, arm.regs[i]);
                     sp += 4;
                 }
             }
 
             if store_lr {
-                check_watchpoint!(arm, sp);
                 arm.bus.write32(sp, arm.regs[REG_LR]);
             }
         }
@@ -519,14 +510,12 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
             for i in 0..8 {
                 if reglist & (1 << i) != 0 {
-                    check_watchpoint!(arm, sp);
                     arm.regs[i] = arm.bus.read32(sp);
                     sp += 4;
                 }
             }
 
             if load_pc {
-                check_watchpoint!(arm, sp);
                 let addr = arm.bus.read32(sp);
                 sp += 4;
                 arm.branch_to(addr & !1);
@@ -550,7 +539,6 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
             for i in 0..8 {
                 if rlist & (1 << i) != 0 {
-                    check_watchpoint!(arm, rb);
                     arm.bus.write32(rb, arm.regs[i]);
                     rb += 4;
                 }
@@ -567,7 +555,6 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
 
             for i in 0..8 {
                 if rlist & (1 << i) != 0 {
-                    check_watchpoint!(arm, rb);
                     arm.regs[i] = arm.bus.read32(rb);
                     rb += 4;
                 }

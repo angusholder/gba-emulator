@@ -7,7 +7,7 @@ use std::collections::{ HashMap, HashSet };
 
 use num_traits::{ Num, PrimInt };
 
-use crate::arm7tdmi::{StepEvent, ARM_REGS};
+use crate::arm7tdmi::ARM_REGS;
 use crate::bus::Bus;
 use crate::gba::Gba;
 use crate::disassemble::{ disassemble_arm_opcode, disassemble_thumb_opcode };
@@ -243,31 +243,10 @@ impl Debugger {
     fn step(&mut self, print_state: bool) -> bool {
         self.gba.step(&mut self.buffer);
 
-        let event = StepEvent::None;
         if print_state {
             println!("{:?}\n", self.gba.arm);
         }
-        match event {
-            StepEvent::TriggerWatchpoint(addr) => {
-                println!("Watchpoint triggered at {:06X}", addr);
-                if self.temp_watchpoints.contains(&addr) {
-                    self.temp_watchpoints.remove(&addr);
-                    self.gba.arm.watchpoints.remove(addr);
-                }
-                true
-            }
-            StepEvent::TriggerBreakpoint(addr) => {
-                println!("Breakpoint triggered at {:06X}", addr);
-                if self.temp_breakpoints.contains(&addr) {
-                    self.temp_breakpoints.remove(&addr);
-                    self.gba.arm.breakpoints.remove(addr);
-                }
-                true
-            }
-            StepEvent::None => {
-                false
-            }
-        }
+        false
     }
 
     pub fn run(&mut self) {
@@ -421,36 +400,30 @@ impl Debugger {
         use self::Command::*;
         match cmd {
             AddBreakpoint(addr) => {
-                self.gba.arm.breakpoints.insert(addr);
+                unimplemented!()
             }
             AddTempBreakpoint(addr) => {
-                self.gba.arm.breakpoints.insert(addr);
-                self.temp_breakpoints.insert(addr);
+                unimplemented!()
             }
             DelBreakpoint(addr) => {
-                self.gba.arm.breakpoints.remove(addr);
+                unimplemented!()
             }
             AddWatchpoint(addr) => {
-                self.gba.arm.watchpoints.insert(addr);
+                unimplemented!()
             }
             AddTempWatchpoint(addr) => {
-                self.gba.arm.watchpoints.insert(addr);
-                self.temp_watchpoints.insert(addr);
+                unimplemented!()
             }
             DelWatchpoint(addr) => {
-                self.gba.arm.watchpoints.remove(addr);
+                unimplemented!()
             }
 
             ListBreakpoints => {
-                for (i, b) in self.gba.arm.breakpoints.iter().enumerate() {
-                    println!("  {}: {:06X}", i, b);
-                }
+                unimplemented!()
             }
 
             ListWatchpoints => {
-                for (i, w) in self.gba.arm.watchpoints.iter().enumerate() {
-                    println!("  {}: {:06X}", i, w);
-                }
+                unimplemented!()
             }
 
             Step(n) => {
@@ -470,8 +443,6 @@ impl Debugger {
             }
             RestoreState(name) => {
                 if let Some(mut state) = self.save_states.get(&name).cloned() {
-                    state.gba.arm.watchpoints = self.gba.arm.watchpoints.clone();
-                    state.gba.arm.breakpoints = self.gba.arm.breakpoints.clone();
                     self.gba = state.gba;
                 } else {
                     println!("No save state exists named '{}'", name);

@@ -3,15 +3,6 @@ pub use crate::utils::sign_extend;
 use crate::arm7tdmi::disassemble::DisResult;
 use crate::arm7tdmi::disassemble::err;
 
-macro_rules! check_watchpoint {
-    ($arm:expr, $addr:expr) => {
-        if $arm.watchpoints.contains($addr) {
-            println!("Triggered watchpoint at {:08X}!", $addr)
-//            return StepEvent::TriggerWatchpoint($addr);
-        }
-    }
-}
-
 #[inline(always)]
 pub fn set_zn(arm: &mut Arm7TDMI, value: u32) {
     arm.cpsr.z = value == 0;
