@@ -536,6 +536,12 @@ pub static THUMB_DISPATCH_TABLE: &[(&str, &str, ThumbEmuFn)] = &[
         }
     ),
 
+    // Not strictly an ArmV4 instruction, but if we want a software breakpoint instruction, we
+    // might as well use what Arm actually ended up using
+    ("1011 1110 iiiiiiii", "BKPT #imm[i]", |arm, op| {
+        unimplemented!()
+    }),
+
     ("1100 0 bbb llllllll", "STMIA %Rb!, { %+Ll }",
         |arm, op| {
             let rlist = op.imm8();
