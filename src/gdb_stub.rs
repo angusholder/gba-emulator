@@ -63,8 +63,9 @@ impl GdbStub {
             if self.run_state == RunState::Running {
                 let deadline = Instant::now() + Duration::from_millis(15);
                 while Instant::now() < deadline {
-                    self.gba.step(&mut self.framebuffer);
+                    self.step_gba();
                     if let Some(stop_reason) = self.bus_snooper.stop_reason.take() {
+                        note!(GDB, "Stopped in debugger due to {:?}", stop_reason);
                         self.run_state = RunState::Paused;
                         self.send(&stop_reason.to_command())?;
                         break;
@@ -382,6 +383,8 @@ impl GdbStub {
             self.gba.arm.branch_to(addr);
         }
 
+        self.run_state = RunState::Running;
+
         Ok(())
     }
 
@@ -391,8 +394,19 @@ impl GdbStub {
             self.gba.arm.branch_to(addr);
         }
 
-        self.gba.step(&mut self.framebuffer);
-        self.send_fmt(format_args!("S{:02}", SIGTRAP))
+        self.step_gba();
+        let stop_reason = self.bus_snooper.stop_reason.take()
+            .unwrap_or(StopReason::Step);
+        self.send(&stop_reason.to_command())
+    }
+
+    fn step_gba(&mut self) {
+        let pc = self.gba.arm.regs[REG_PC] - self.gba.arm.get_op_size();
+        if self.bus_snooper.breakpoints.contains(pc) {
+            self.bus_snooper.stop_reason = Some(StopReason::Breakpoint(pc));
+        } else {
+            self.gba.step(&mut self.framebuffer);
+        }
     }
 
     fn process_detach_command(&mut self) -> GResult {
@@ -457,11 +471,13 @@ impl GdbStub {
     }
 }
 
+#[derive(Debug)]
 enum StopReason {
     ReadWatchpoint(u32),
     WriteWatchpoint(u32),
     AccessWatchpoint(u32),
     Breakpoint(u32),
+    Step,
 }
 
 impl StopReason {
@@ -472,6 +488,7 @@ impl StopReason {
             StopReason::WriteWatchpoint(addr) => write!(result, "T{:02}watch:{}", SIGTRAP, std::str::from_utf8(&int_to_hex_le(*addr)).unwrap()),
             StopReason::AccessWatchpoint(addr) => write!(result, "T{:02}awatch:{}", SIGTRAP, std::str::from_utf8(&int_to_hex_le(*addr)).unwrap()),
             StopReason::Breakpoint(_) => write!(result, "T{:02}hwbreak:", SIGTRAP),
+            StopReason::Step => write!(result, "S{:02}", SIGTRAP),
         }.unwrap();
         result
     }
@@ -511,12 +528,6 @@ impl BusDebugSnooper {
             self.stop_reason = Some(StopReason::WriteWatchpoint(addr));
         }
     }
-
-    fn check_exec(&mut self, addr: u32) {
-        if self.breakpoints.contains(addr) {
-            self.stop_reason = Some(StopReason::Breakpoint(addr));
-        }
-    }
 }
 
 impl Bus for BusDebugSnooper {
@@ -551,12 +562,10 @@ impl Bus for BusDebugSnooper {
     }
 
     fn exec_thumb_slow(&mut self, addr: u32) -> u16 {
-        self.check_exec(addr);
         self.delegate.exec_thumb_slow(addr)
     }
 
     fn exec_arm_slow(&mut self, addr: u32) -> u32 {
-        self.check_exec(addr);
         self.delegate.exec_arm_slow(addr)
     }
 

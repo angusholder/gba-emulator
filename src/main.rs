@@ -40,9 +40,7 @@ fn main() -> Result<(), failure::Error> {
 
     let mut stub = GdbStub::new(true, gba);
     stub.listen("127.0.0.1:9876")?;
-    loop {
-        stub.update()?;
-    }
+    stub.run()
 //
 //    let mut debugger = Debugger::new(gba);
 //
