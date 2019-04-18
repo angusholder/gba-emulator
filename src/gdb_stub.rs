@@ -10,6 +10,8 @@ use crate::renderer::Framebuffer;
 use std::time::{Instant, Duration};
 use std::thread;
 use crate::arm7tdmi::REG_PC;
+use glutin::EventsLoop;
+use crate::gui::Gui;
 
 type GResult = Result<(), failure::Error>;
 
@@ -26,6 +28,8 @@ pub struct GdbStub {
     bus_snooper: Box<BusDebugSnooper>,
     framebuffer: Framebuffer,
     run_state: RunState,
+    events_loop: EventsLoop,
+    gui: Gui,
 }
 
 #[derive(PartialEq)]
@@ -35,18 +39,22 @@ enum RunState {
 }
 
 impl GdbStub {
-    pub fn new(blocking: bool, mut gba: Box<Gba>) -> GdbStub {
+    pub fn new(mut gba: Box<Gba>) -> GdbStub {
         let mut bus_snooper = BusDebugSnooper::wrap(gba.arm.bus.clone());
         gba.fixup_bus_ptrs(BusPtr::new(bus_snooper.as_mut() as *mut dyn Bus));
+        let events_loop = EventsLoop::new();
+        let gui = Gui::new(&events_loop);
         GdbStub {
             listener: None,
             stream: None,
-            blocking,
+            blocking: false,
             no_ack_mode: false,
             gba,
             bus_snooper,
             framebuffer: Framebuffer::new(),
             run_state: RunState::Paused,
+            events_loop,
+            gui,
         }
     }
 
@@ -58,8 +66,9 @@ impl GdbStub {
     }
 
     pub fn run(&mut self) -> GResult {
-        loop {
+        while self.gui.running {
             self.update()?;
+            self.gui.update(&mut self.events_loop, &mut self.gba);
             if self.run_state == RunState::Running {
                 let deadline = Instant::now() + Duration::from_millis(15);
                 while Instant::now() < deadline {
@@ -71,10 +80,9 @@ impl GdbStub {
                         break;
                     }
                 }
-            } else {
-                thread::sleep(Duration::from_millis(1));
             }
         }
+        Ok(())
     }
 
     pub fn update(&mut self) -> GResult {

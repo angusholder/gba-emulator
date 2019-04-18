@@ -24,6 +24,7 @@ mod dma;
 mod iomap;
 mod bus;
 mod gdb_stub;
+mod gui;
 
 //use crate::gba::Gba;
 //use crate::debugger::Debugger;
@@ -38,7 +39,7 @@ fn main() -> Result<(), failure::Error> {
     let mut gba = Gba::new(&bios, &rom);
     gba.arm.signal_reset();
 
-    let mut stub = GdbStub::new(true, gba);
+    let mut stub = GdbStub::new(gba);
     stub.listen("127.0.0.1:9876")?;
     stub.run()
 //
