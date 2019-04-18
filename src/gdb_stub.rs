@@ -9,6 +9,7 @@ use crate::utils::OrderedSet;
 use crate::renderer::Framebuffer;
 use std::time::{Instant, Duration};
 use std::thread;
+use crate::arm7tdmi::REG_PC;
 
 type GResult = Result<(), failure::Error>;
 
@@ -268,9 +269,10 @@ impl GdbStub {
 
     fn read_gprs(&mut self) -> GResult {
         let mut reg_string = Vec::with_capacity(16 * 8);
-        for reg in self.gba.arm.regs.iter() {
+        for reg in self.gba.arm.regs[..REG_PC].iter() {
             reg_string.write(&int_to_hex_le(*reg))?;
         }
+        reg_string.write(&int_to_hex_le(self.gba.arm.current_pc()))?;
         self.send(&reg_string)
     }
 
@@ -285,6 +287,8 @@ impl GdbStub {
         let reg_index: usize = hex_to_int(msg)?;
         let reg = if reg_index == 25 {
             self.gba.arm.cpsr.into()
+        } else if reg_index == REG_PC {
+            self.gba.arm.current_pc()
         } else if reg_index < 16 {
             self.gba.arm.regs[reg_index]
         } else {
