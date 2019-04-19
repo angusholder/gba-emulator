@@ -11,8 +11,9 @@ use std::time::{Instant, Duration};
 use crate::arm7tdmi::REG_PC;
 use glutin::EventsLoop;
 use crate::gui::Gui;
+use std::thread;
 
-type GResult = Result<(), failure::Error>;
+type GResult<T=()> = Result<T, failure::Error>;
 
 // From include/gdb/signals.h in GDB source code
 const SIGINT: u32 = 2;
@@ -79,6 +80,8 @@ impl GdbStub {
                         break;
                     }
                 }
+            } else {
+                thread::sleep(Duration::from_millis(1));
             }
         }
         Ok(())
