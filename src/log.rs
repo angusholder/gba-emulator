@@ -105,7 +105,12 @@ impl FromStr for LogKind {
 macro_rules! log_ {
     ($level:expr, $kind:expr, $fmt:expr, $($arg:expr),*) => {
         if $level >= crate::log::get_log_level($kind) {
-            println!("{:>5}[{:<4}]: {}", $level, $kind, format_args!($fmt, $($arg),*));
+            lazy_static! {
+                static ref START_TIME: SystemTime = SystemTime::now();
+            }
+            use std::time::SystemTime;
+            let diff = SystemTime::now().duration_since(*START_TIME).unwrap().as_millis();
+            println!("{}ms {:>5}[{:<4}]: {}", diff, $level, $kind, format_args!($fmt, $($arg),*));
         }
     }
 }
