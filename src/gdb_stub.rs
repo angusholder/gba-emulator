@@ -106,7 +106,7 @@ impl GdbStub {
         let stream = self.stream.as_mut().unwrap();
 
         let mut bytes = [0u8; 1200];
-        let msg: &[u8];
+        let mut msg: &[u8];
         if let Some(amount) = transpose_would_block(stream.read(&mut bytes[..]))? {
             if amount == 0 {
                 trace!(GDB, "Received 0 bytes, closing TcpStream..");
@@ -121,29 +121,57 @@ impl GdbStub {
             return Ok(());
         }
 
-        match msg[0] {
-            b'+' => return Ok(()), // ack
-            b'-' => return Ok(()), // nak
+        while !msg.is_empty() {
+            let prev = msg;
+            self.parse_message(&mut msg)?;
+            // parse_message() must adjust `msg` to exclude the input it consumed.
+            assert_ne!(prev, msg);
+        }
+
+        Ok(())
+    }
+
+    fn parse_message(&mut self, msg: &mut &[u8]) -> GResult {
+        match (*msg)[0] {
+            b'+' => { // ack
+                *msg = &(*msg)[1..];
+                return Ok(());
+            }
+            b'-' => { // nak
+                *msg = &(*msg)[1..];
+                return Ok(());
+            }
             b'$' => {
                 // Continue on to process this command
             }
-            0x03 => {
-                // Enter debugger
+            0x03 => { // Enter debugger
+                *msg = &(*msg)[1..];
                 self.run_state = RunState::Paused;
                 return Ok(());
             }
             first => {
+                // Skip this character, try parsing from the next character onwards
+                *msg = &(*msg)[1..];
                 warn!(GDB, "packet error; first byte = '{:02X}'", first);
-                stream.write(&[b'-'])?;
-                return Ok(())
+                return self.nak();
             }
         }
 
-        if msg[msg.len() - 3] != b'#' {
-            return self.nak()
+        if !msg.contains(&b'#') {
+            trace!(GDB, "request was missing '#' character");
+            return self.nak();
         }
 
-        let (message_body, their_checksum_str) = split_at(&msg[1..], b'#')?;
+        let (message_body, mut their_checksum_str) = split_at(&msg[1..], b'#')?;
+
+        if their_checksum_str.len() < 2 {
+            trace!(GDB, "request had a checksum of less than 2 digits");
+            return self.nak();
+        }
+
+        // Cut the checksum off at 2 characters, any input left after that might be another request.
+        *msg = &their_checksum_str[2..];
+        their_checksum_str = &their_checksum_str[..2];
 
         let our_checksum = checksum(message_body);
         let their_checksum = hex_to_int(their_checksum_str)?;
@@ -153,9 +181,11 @@ impl GdbStub {
             return self.nak();
         }
 
+        // The input is syntactically well-formed, we'll ack it now, then we can respond with
+        // an empty response if we don't actually understand the command we received.
         self.ack()?;
 
-        let message_type = msg[1];
+        let message_type = message_body[0];
         let message_body = &message_body[1..];
         match message_type {
             b'?' => {
