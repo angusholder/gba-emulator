@@ -59,9 +59,8 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
     let map_entries = r.vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
 
     let bg_y = (r.scanline as u16 + bg.y_offset) as usize;
-    if bg_y > bg_height {
-        return;
-    }
+    // "All four BG planes wrap when they reach their right or bottom edges"
+    let bg_y = bg_y & (bg_height - 1);
 
     let map_screen_index = if bg_y > 255 {
         if bg.map_count() == 4 {
@@ -75,6 +74,7 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
     let mut x = 0usize;
     while x < PHYS_WIDTH {
+        // "All four BG planes wrap when they reach their right or bottom edges"
         let bg_x = (x + bg.x_offset as usize) & (bg_width - 1);
         let map_screen_index = map_screen_index + if bg_x > 255 { 1 } else { 0 };
         let map_entry_index = ((bg_y & !7) << 2) | (bg_x >> 3);
@@ -113,9 +113,8 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
     let map_entries = r.vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
 
     let bg_y = (r.scanline as u16 + bg.y_offset) as usize;
-    if bg_y > bg_height {
-        return;
-    }
+    // "All four BG planes wrap when they reach their right or bottom edges"
+    let bg_y = bg_y & (bg_height - 1);
 
     let map_screen_index = if bg_y > 255 {
         if bg.map_count() == 4 {
@@ -129,6 +128,7 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
     let mut x = 0usize;
     while x < PHYS_WIDTH {
+        // "All four BG planes wrap when they reach their right or bottom edges"
         let bg_x = (x + bg.x_offset as usize) & (bg_width - 1);
         let map_screen_index = map_screen_index + if bg_x > 255 { 1 } else { 0 };
         let map_entry_index = ((bg_y & !7) << 2) | (bg_x >> 3);
