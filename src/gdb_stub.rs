@@ -6,7 +6,7 @@ use std::fmt::Arguments;
 use crate::gba::Gba;
 use crate::bus::{BusPtr, Bus};
 use crate::utils::OrderedSet;
-use crate::renderer::Framebuffer;
+use crate::renderer::{Framebuffer, PHYS_WIDTH, PHYS_HEIGHT};
 use std::time::{Instant, Duration};
 use crate::arm7tdmi::REG_PC;
 use glutin::EventsLoop;
@@ -50,7 +50,7 @@ impl GdbStub {
             no_ack_mode: false,
             gba,
             bus_snooper,
-            framebuffer: Framebuffer::new(),
+            framebuffer: Framebuffer::new(PHYS_WIDTH, PHYS_HEIGHT),
             run_state: RunState::Paused,
             events_loop,
             gui,

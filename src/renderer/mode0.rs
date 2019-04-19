@@ -1,5 +1,7 @@
 use super::renderer::Renderer;
 use super::mode_common::{Layer, Framebuffer, FrameLine, render_line_of_8bit_layer, render_line_of_4bit_layer };
+use crate::renderer::renderer::{Background, BgPalette};
+use crate::utils::Buffer;
 
 fn get_draw_order(r: &mut Renderer) -> Box<[Layer]> {
     use self::Layer::*;
@@ -25,16 +27,30 @@ fn get_draw_order(r: &mut Renderer) -> Box<[Layer]> {
 pub fn render_line(r: &mut Renderer, buffer: &mut Framebuffer) {
     let line = &mut buffer[r.scanline as usize];
     for &layer in get_draw_order(r).iter() {
-        render_line_of_layer(r, layer, line);
+        let bg = &r.bg[layer as usize];
+        render_line_of_layer(bg, &r.vram, &r.bg_palette, r.scanline as u16, line);
     }
 }
 
-fn render_line_of_layer(r: &mut Renderer, layer: Layer, line: &mut FrameLine) {
-    if r.bg[layer as usize].linear_palettes {
-        render_line_of_8bit_layer(r, layer, line);
+fn render_line_of_layer(
+    bg: &Background,
+    vram: &Buffer,
+    bg_palette: &BgPalette,
+    scanline: u16,
+    line: &mut FrameLine
+) {
+    if bg.linear_palettes {
+        render_line_of_8bit_layer(bg, vram, bg_palette, scanline, line);
     } else {
-        render_line_of_4bit_layer(r, layer, line);
+        render_line_of_4bit_layer(bg, vram, bg_palette, scanline, line);
     }
 }
 
-
+pub fn render_full_background(r: &mut Renderer, layer: Layer, buffer: &mut Framebuffer) {
+    let bg = &r.bg[layer as usize];
+    let (width, height) = bg.get_size();
+    for i in 0..height {
+        let line = &mut buffer[i][..width];
+        render_line_of_layer(bg, &r.vram, &r.bg_palette, i as u16, line);
+    }
+}

@@ -1,12 +1,16 @@
 use glium::{Display, Surface};
+use glium::texture::{Texture2d, UncompressedFloatFormat, MipmapsOption, RawImage2d, ClientFormat};
 use glutin::{EventsLoop, WindowBuilder, ContextBuilder, Event, WindowEvent};
-use imgui::{ImGui, ImFontConfig, Ui, ImStr};
+use imgui::{ImGui, ImFontConfig, Ui, ImStr, ImTexture};
 use imgui_glium_renderer::Renderer;
 use std::time::Instant;
 use std::ptr;
 
 use crate::arm7tdmi::ARM_REGS;
 use crate::gba::Gba;
+use crate::renderer::{mode0, Framebuffer};
+use crate::renderer::mode_common::Layer;
+use std::borrow::Cow;
 
 pub struct Gui {
     display: Display,
@@ -15,6 +19,7 @@ pub struct Gui {
     pub running: bool,
     last_frame: Instant,
     hidpi_factor: f64,
+    render_tile_maps: Box<FnMut(&mut Gba, &Ui, &mut Renderer, &Display)>,
 }
 
 impl Gui {
@@ -44,6 +49,8 @@ impl Gui {
 
         let renderer = Renderer::init(&mut imgui, &display).unwrap();
 
+        let render_tile_maps = Self::render_tile_maps();
+
         Gui {
             display,
             imgui,
@@ -51,6 +58,7 @@ impl Gui {
             running: true,
             last_frame: Instant::now(),
             hidpi_factor,
+            render_tile_maps,
         }
     }
 
@@ -86,6 +94,7 @@ impl Gui {
 
         let ui = self.imgui.frame(frame_size, delta_s);
         Self::render_cpu(gba, &ui);
+        (self.render_tile_maps)(gba, &ui, &mut self.renderer, &self.display);
         self.renderer.render(&mut frame, ui).unwrap();
 
         frame.finish().unwrap();
@@ -103,6 +112,55 @@ impl Gui {
                 }
                 ui.pop_item_width();
             });
+    }
+
+    fn render_tile_maps() -> Box<FnMut(&mut Gba, &Ui, &mut Renderer, &Display)> {
+        use crate::renderer::mode_common::Layer::*;
+        let mut buffer = Framebuffer::new(512, 512);
+
+        let mut layers: [(Layer, Option<ImTexture>); 4] = [
+            (Bg0, None),
+            (Bg1, None),
+            (Bg2, None),
+            (Bg3, None),
+        ];
+
+        Box::new(move |gba, ui, renderer, display| {
+            for (layer, texture_id) in layers.iter_mut() {
+                mode0::render_full_background(&mut gba.renderer, *layer, &mut buffer);
+                let buffer_u32_slice: &[u32] = buffer.as_slice();
+                let buffer_u8_slice: &[u8] = unsafe {
+                    std::slice::from_raw_parts(
+                        buffer_u32_slice.as_ptr() as *const u8,
+                        buffer_u32_slice.len() * std::mem::size_of::<u32>())
+                };
+                let raw = RawImage2d {
+                    data: Cow::Borrowed(buffer_u8_slice),
+                    width: 512,
+                    height: 512,
+                    format: ClientFormat::U8U8U8U8,
+                };
+                let texture = Texture2d::with_format(
+                    display,
+                    raw,
+                    UncompressedFloatFormat::U8U8U8U8,
+                    MipmapsOption::NoMipmap).unwrap();
+                let id = if let Some(id) = *texture_id {
+                    renderer.textures().replace(id, texture);
+                    id
+                } else {
+                    let id = renderer.textures().insert(texture);
+                    *texture_id = Some(id);
+                    id
+                };
+                ui.text(&format!("Background {}", *layer as i32));
+                let (w, h) = gba.renderer.bg[*layer as usize].get_size();
+                let (w, h) = (w as f32, h as f32);
+                ui.image(id, (w, h))
+                    .uv1((512.0 / w, 512.0 / h))
+                    .build();
+            }
+        })
     }
 }
 

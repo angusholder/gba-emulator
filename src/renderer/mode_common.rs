@@ -1,22 +1,26 @@
 use std::ops::{ Index, IndexMut };
-use std::mem;
 
-use super::renderer::{ Renderer, Background, PHYS_WIDTH, PHYS_HEIGHT };
+use super::renderer::{Background, PHYS_WIDTH};
+use crate::utils::Buffer;
+use crate::renderer::renderer::BgPalette;
 
 const TILE_SIZE_4BIT: usize = 0x20;
 const TILE_SIZE_8BIT: usize = 0x20;
 
-pub type FrameLine = [u32; PHYS_WIDTH];
+pub type FrameLine = [u32];
 
 #[derive(Clone)]
 pub struct Framebuffer {
-    buffer: Box<[u32; PHYS_HEIGHT * PHYS_WIDTH]>,
+    buffer: Box<[u32]>,
+    width: usize,
+    height: usize,
 }
 
 impl Framebuffer {
-    pub fn new() -> Self {
+    pub fn new(width: usize, height: usize) -> Self {
         Framebuffer {
-            buffer: Box::new([0u32; PHYS_WIDTH * PHYS_HEIGHT]),
+            buffer: vec![0u32; width * height].into_boxed_slice(),
+            width, height,
         }
     }
 
@@ -27,19 +31,13 @@ impl Framebuffer {
 impl Index<usize> for Framebuffer {
     type Output = FrameLine;
     fn index(&self, index: usize) -> &Self::Output {
-        let slice = &self.buffer[index*PHYS_WIDTH..(index+1)*PHYS_WIDTH];
-        unsafe {
-            mem::transmute::<*const u32, &Self::Output>(slice.as_ptr())
-        }
+        &self.buffer[index*self.width..(index+1)*self.width]
     }
 }
 
 impl IndexMut<usize> for Framebuffer {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        let slice = &mut self.buffer[index*PHYS_WIDTH..(index+1)*PHYS_WIDTH];
-        unsafe {
-            mem::transmute::<*mut u32, &mut Self::Output>(slice.as_mut_ptr())
-        }
+        &mut self.buffer[index*self.width..(index+1)*self.width]
     }
 }
 
@@ -52,13 +50,17 @@ pub enum Layer {
     // Obj
 }
 
-pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut FrameLine) {
-    let bg: &Background = &r.bg[layer as usize];
-
+pub fn render_line_of_4bit_layer(
+    bg: &Background,
+    vram: &Buffer,
+    bg_palette: &BgPalette,
+    scanline: u16,
+    line: &mut FrameLine
+) {
     let (bg_width, bg_height) = bg.get_size();
-    let map_entries = r.vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
+    let map_entries = vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
 
-    let bg_y = (r.scanline as u16 + bg.y_offset) as usize;
+    let bg_y = (scanline + bg.y_offset) as usize;
     // "All four BG planes wrap when they reach their right or bottom edges"
     let bg_y = bg_y & (bg_height - 1);
 
@@ -84,18 +86,21 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
         let hflip_mask = if map_entry & 0x400 != 0 { 7 } else { 0 };
         let vflip_mask = if map_entry & 0x800 != 0 { 7 } else { 0 };
         let palette_index = (map_entry >> 8 & 0xF0) as usize;
-        let palette = &r.bg_palette[palette_index..palette_index+16];
+        let palette = &bg_palette[palette_index..palette_index+16];
 
         let tile_inner_y = (bg_y & 7) ^ vflip_mask;
         let tile_inner_y_shifted = tile_inner_y << 2;
 
-        let tile_pixels = r.vram.slice_u8(bg.tile_base_addr + tile_index, 16);
+        // "Each tile occupies 32 bytes of memory, the first 4 bytes for the topmost row of the tile, and so on"
+        let tile_pixels = vram.slice_u8(bg.tile_base_addr + tile_index, 32);
 
         for bg_x_lower in bg_x&7 .. 8 {
             let tile_inner_x = bg_x_lower ^ hflip_mask;
             let pixel_offset = (tile_inner_x >> 1) | tile_inner_y_shifted;
             let pixel_shift = (tile_inner_x & 1) * 4;
 
+            // "Each byte representing two dots, the lower 4 bits define the color for the left
+            // (!) dot, the upper 4 bits the color for the right dot"
             let color_index = tile_pixels[pixel_offset] >> pixel_shift & 0xF;
             if color_index != 0 {
                 line[x] = palette[color_index as usize];
@@ -106,13 +111,17 @@ pub fn render_line_of_4bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
     }
 }
 
-pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut FrameLine) {
-    let bg: &Background = &r.bg[layer as usize];
-
+pub fn render_line_of_8bit_layer(
+    bg: &Background,
+    vram: &Buffer,
+    bg_palette: &BgPalette,
+    scanline: u16,
+    line: &mut FrameLine
+) {
     let (bg_width, bg_height) = bg.get_size();
-    let map_entries = r.vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
+    let map_entries = vram.slice_u16(bg.map_base_addr, 0x800 * bg.map_count() as u32);
 
-    let bg_y = (r.scanline as u16 + bg.y_offset) as usize;
+    let bg_y = (scanline + bg.y_offset) as usize;
     // "All four BG planes wrap when they reach their right or bottom edges"
     let bg_y = bg_y & (bg_height - 1);
 
@@ -141,7 +150,8 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
         let tile_inner_y = (bg_y & 7) ^ vflip_mask;
         let tile_inner_y_shifted = tile_inner_y << 3;
 
-        let tile_pixels = r.vram.slice_u8(bg.tile_base_addr + tile_index, 32);
+        // "Each tile occupies 64 bytes of memory, the first 8 bytes for the topmost row of the tile, and so on"
+        let tile_pixels = vram.slice_u8(bg.tile_base_addr + tile_index, 64);
 
         for bg_x_lower in bg_x&7 .. 8 {
             let tile_inner_x = bg_x_lower ^ hflip_mask;
@@ -149,7 +159,7 @@ pub fn render_line_of_8bit_layer(r: &mut Renderer, layer: Layer, line: &mut Fram
 
             let color_index = tile_pixels[pixel_offset];
             if color_index != 0 {
-                line[x] = r.bg_palette[color_index as usize];
+                line[x] = bg_palette[color_index as usize];
             }
 
             x += 1;

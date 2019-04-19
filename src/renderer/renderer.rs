@@ -105,10 +105,12 @@ impl Background {
     pub fn write_ycoord_hi(&mut self, value: u16) { write_offset_hi(&mut self.y_ref, value); }
 }
 
+pub type BgPalette = [u32; 256];
+
 #[derive(Clone)]
 pub struct Renderer {
     pub vram: Buffer,
-    pub bg_palette: [u32; 256],
+    pub bg_palette: BgPalette,
     obj_palette: [u32; 256],
     obj_transforms: [ObjTransform; 32],
     obj_attributes: [ObjAttributes; 128],
