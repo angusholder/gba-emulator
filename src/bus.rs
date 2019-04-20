@@ -1,5 +1,6 @@
 use std::ops::{ Deref, DerefMut };
-use std::mem;
+use std::ptr;
+use crate::gba::Gba;
 
 pub trait Bus {
     fn read8(&mut self, addr: u32) -> u8;
@@ -38,7 +39,7 @@ pub struct BusPtr(*mut dyn Bus);
 
 impl BusPtr {
     pub fn null() -> BusPtr {
-        BusPtr(unsafe { mem::zeroed() })
+        BusPtr(ptr::null_mut::<Gba>() as *mut dyn Bus)
     }
 
     pub fn new(bus: *mut dyn Bus) -> Self {

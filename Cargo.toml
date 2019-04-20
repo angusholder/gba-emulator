@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Angus Holder <aholder97@gmail.com>"]
 edition = "2018"
 
+[profile.release]
+debug = true
+
 [dependencies]
 bitflags = "1.0.4"
 enum-primitive-derive = "0.1.2"
