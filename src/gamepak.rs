@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use crate::utils::{ Buffer, Cycle };
+use crate::log::IO;
 
 const GAMEPAK_PAGE_SIZE: u32 = 128*1024;
 const GAMEPAK_PAGE_MASK: u32 = GAMEPAK_PAGE_SIZE - 1;
@@ -45,7 +46,7 @@ impl GamePak {
 
     pub fn read8(&self, addr: u32) -> (Cycle, u8) {
         let (cycles, read) = self.read16(addr & !1);
-        let read = (read >> (addr & 1)) as u8;
+        let read = (read >> (8 * (addr & 1))) as u8;
         self.next_seq_addr.set((addr + 1) & !1);
         (cycles, read)
     }
@@ -66,9 +67,10 @@ impl GamePak {
             _ => unreachable!(),
         };
 
-        let read = if (addr as usize) < self.buffer.len() {
+        let read = if ((addr & GAMEPAK_MAX_SIZE_MASK) as usize) < self.buffer.len() {
             self.buffer.read16(addr & GAMEPAK_MAX_SIZE_MASK)
         } else {
+            trace!(IO, "Out-of-bounds read from gamepak at {:08X}", addr);
             // When out of bounds, the data read is just the last thing on the bus, ie the address.
             (addr >> 1 & 0xFFFF) as u16
         };
