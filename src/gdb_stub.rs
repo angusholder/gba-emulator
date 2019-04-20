@@ -150,7 +150,7 @@ impl GdbStub {
             0x03 => { // Enter debugger
                 *msg = &(*msg)[1..];
                 self.run_state = RunState::Paused;
-                return Ok(());
+                return self.send_fmt(format_args!("S{:02}", SIGINT));
             }
             first => {
                 // Skip this character, try parsing from the next character onwards
